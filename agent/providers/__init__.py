@@ -1,3 +1,5 @@
-from .openai_compatible import OpenAICompatibleProvider
+from .anthropic import AnthropicProvider
+
+__all__ = ["AnthropicProvider", "OpenAICompatibleProvider"]
 
 __all__ = ["OpenAICompatibleProvider"]

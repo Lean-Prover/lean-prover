@@ -498,5 +498,45 @@
     "id": "prime_dvd_pow",
     "difficulty": "hard",
     "statement": "theorem prover_prime_dvd_pow (p a : ℕ) (n : ℕ) : Nat.Prime p → p ∣ a ^ n → p ∣ a := by\n  sorry"
+  },
+  {
+    "id": "fermat_little",
+    "difficulty": "hard",
+    "statement": "theorem prover_fermat_little (p a : ℕ) (hp : Nat.Prime p) : a ^ p % p = a % p := by\n  sorry"
+  },
+  {
+    "id": "wilson_theorem",
+    "difficulty": "hard",
+    "statement": "theorem prover_wilson_theorem (p : ℕ) (hp : Nat.Prime p) : Nat.factorial (p - 1) % p = p - 1 := by\n  sorry"
+  },
+  {
+    "id": "gcd_pow",
+    "difficulty": "hard",
+    "statement": "theorem prover_gcd_pow (a b n : ℕ) : Nat.gcd (a ^ n) (b ^ n) = (Nat.gcd a b) ^ n := by\n  sorry"
+  },
+  {
+    "id": "coprime_pow_right",
+    "difficulty": "hard",
+    "statement": "theorem prover_coprime_pow_right (a b n : ℕ) (h : Nat.Coprime a b) : Nat.Coprime (a ^ n) b := by\n  sorry"
+  },
+  {
+    "id": "pow_two_le_factorial",
+    "difficulty": "hard",
+    "statement": "theorem prover_pow_two_le_factorial (n : ℕ) (h : 4 ≤ n) : n ^ 2 ≤ Nat.factorial n := by\n  sorry"
+  },
+  {
+    "id": "sum_squares_mul",
+    "difficulty": "hard",
+    "statement": "theorem prover_sum_squares_mul (a b c d : ℤ) : (a ^ 2 + b ^ 2) * (c ^ 2 + d ^ 2) = (a * c - b * d) ^ 2 + (a * d + b * c) ^ 2 := by\n  sorry"
+  },
+  {
+    "id": "euler_phi_mul",
+    "difficulty": "hard",
+    "statement": "theorem prover_euler_phi_mul (m n : ℕ) (h : Nat.Coprime m n) : Nat.totient (m * n) = Nat.totient m * Nat.totient n := by\n  sorry"
+  },
+  {
+    "id": "cauchy_schwarz_sum",
+    "difficulty": "hard",
+    "statement": "theorem prover_cauchy_schwarz_sum (f g : ℕ → ℝ) (n : ℕ) : (∑ i in Finset.range n, f i * g i) ^ 2 ≤ (∑ i in Finset.range n, f i ^ 2) * (∑ i in Finset.range n, g i ^ 2) := by\n  sorry"
   }
 ]

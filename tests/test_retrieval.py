@@ -86,7 +86,8 @@ def test_search_respects_k(tmp_path: Path) -> None:
 def test_search_returns_empty_for_unrelated_statement(tmp_path: Path) -> None:
     write_mathlib(tmp_path, FILES)
     idx = retrieval.build_index(tmp_path)
-    hits = retrieval.search_lemmas("theorem xyz (q : Prop) : q → q", index=idx)
+    hits = retrieval.search_lemmas("theorem xyz (q : Prop) : q → q", index=idx,
+                                   lean_dir=tmp_path)
     assert hits == []
 
 

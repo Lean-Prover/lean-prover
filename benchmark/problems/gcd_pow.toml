@@ -1,0 +1,5 @@
+id = """gcd_pow"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_gcd_pow (a b n : ℕ) : Nat.gcd (a ^ n) (b ^ n) = (Nat.gcd a b) ^ n := by
+  sorry"""

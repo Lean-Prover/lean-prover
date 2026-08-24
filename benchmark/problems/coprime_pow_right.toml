@@ -1,0 +1,5 @@
+id = """coprime_pow_right"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_coprime_pow_right (a b n : ℕ) (h : Nat.Coprime a b) : Nat.Coprime (a ^ n) b := by
+  sorry"""

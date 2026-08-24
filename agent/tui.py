@@ -21,7 +21,7 @@ from rich.text import Text
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.selection import Selection
 from textual.widgets import (
@@ -173,7 +173,10 @@ def save_tui_settings(settings: TuiSettings) -> None:
 def load_problems() -> list[dict]:
     if not PROBLEMS_FILE.exists():
         return []
-    return json.loads(PROBLEMS_FILE.read_text())
+    try:
+        return json.loads(PROBLEMS_FILE.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ValueError(f"benchmark/problems.json is unreadable: {exc}") from exc
 
 
 def _put(log: RichLog, text: str, style: str = "") -> None:
@@ -404,7 +407,11 @@ class LeaderboardScreen(ModalScreen[None]):
         table = self.query_one(DataTable)
         table.add_columns("#", "name", "score", "tiers", "date")
         board_file = REPO / "leaderboard.json"
-        board = json.loads(board_file.read_text()) if board_file.exists() else []
+        try:
+            board = json.loads(board_file.read_text()) if board_file.exists() else []
+        except (json.JSONDecodeError, OSError) as exc:
+            table.add_row("—", f"(unreadable leaderboard.json: {exc})", "", "", "")
+            return
         if not board:
             table.add_row("—", "(empty)", "run `prover leaderboard --run`", "", "")
             return
@@ -414,6 +421,60 @@ class LeaderboardScreen(ModalScreen[None]):
             )
             table.add_row(str(i), e.get("name", "?"), f"{e.get('score',0)}/{e.get('total','?')}",
                           tiers, e.get("date", ""))
+
+
+class ProofDiffScreen(ModalScreen[None]):
+    """Interactive, navigable diff of the last proof file written for a problem.
+
+    j/k scroll, space page, 0/G jump to top/bottom, q/escape close.
+    """
+
+    CSS = """
+    ProofDiffScreen { width: 100%; height: 100%; }
+    #diff-title { height: 1; background: $panel; padding: 0 1; }
+    #diff-body { height: 1fr; padding: 0 1; }
+    """
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("q", "dismiss(None)", "Close"),
+        Binding("escape", "dismiss(None)", "Close"),
+        Binding("j", "scroll_down", "Down", show=False),
+        Binding("k", "scroll_up", "Up", show=False),
+        Binding("space", "page_down", "Page down", show=False),
+        Binding("0", "top", "Top", show=False),
+        Binding("G", "bottom", "Bottom", show=False),
+    ]
+
+    def __init__(self, problem_id: str, diff: str) -> None:
+        super().__init__()
+        self._problem_id = problem_id
+        self._diff = diff
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            f"[bold]proof diff — {self._problem_id}[/bold] "
+            f"[dim](j/k scroll · space page · 0/G ends · q close)[/dim]",
+            id="diff-title",
+        )
+        with VerticalScroll(id="diff-body"):
+            yield Static(escape(self._diff))
+
+    def _body(self) -> VerticalScroll:
+        return self.query_one("#diff-body", VerticalScroll)
+
+    def action_scroll_down(self) -> None:
+        self._body().scroll_down()
+
+    def action_scroll_up(self) -> None:
+        self._body().scroll_up()
+
+    def action_page_down(self) -> None:
+        self._body().scroll_page_down()
+
+    def action_top(self) -> None:
+        self._body().scroll_home()
+
+    def action_bottom(self) -> None:
+        self._body().scroll_end()
 
 
 class MessageScreen(ModalScreen[None]):
@@ -586,8 +647,57 @@ class ReplayScreen(ModalScreen[None]):
             log.write(json.dumps(rec, ensure_ascii=False, default=str))
 
 
+def build_session_label(sp: Path, rec, recs: list[dict]) -> str:
+    """Build the one-line SessionsScreen label for a recorded session."""
+    start = next((r for r in recs if r.get("event") == "start"), {})
+    result = next((r for r in recs if r.get("event") == "result"), {})
+    mark = "✓" if result.get("proved") else ("◼" if result.get("stopped") else "✘")
+    pid = start.get("problem_id") or "?"
+    steps = result.get("steps", "?")
+    secs = result.get("seconds", "?")
+    stats = calculate_session_stats(recs)
+    title = rec.title if rec is not None and rec.title else ""
+    label = (f"{mark} {sp.stem:<42} {pid!s:<26} steps={steps} {secs}s"
+             f" {stats.total_tokens}t")
+    if title:
+        label += f"  [{title[:40]}]"
+    return label
+
+
+class SessionRenameScreen(ModalScreen[str | None]):
+    """Prompt for a new session title (rename-inline for SessionsScreen)."""
+
+    CSS = """
+    SessionRenameScreen { align: center middle; }
+    #rename-box {
+        width: 72; height: 7;
+        background: $panel; border: round $primary; padding: 1 2;
+    }
+    """
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, session_id: str, title: str = "") -> None:
+        super().__init__()
+        self._session_id = session_id
+        self._title = title
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="rename-box"):
+            yield Static(f"rename session [cyan]{self._session_id}[/cyan]")
+            yield Input(value=self._title, id="rename-input")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip())
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class SessionsScreen(ModalScreen[Path | None]):
-    """Browse ~/.prover/sessions and pick one to replay."""
+    """Browse ~/.prover/sessions — replay (Enter), rename (r), delete (d),
+    or make the highlighted session the active/current one (s)."""
 
     CSS = """
     SessionsScreen { align: center middle; }
@@ -597,6 +707,11 @@ class SessionsScreen(ModalScreen[Path | None]):
     }
     """
     BINDINGS: ClassVar[list[Binding]] = [
+        Binding("enter", "open_selected", "Replay", show=False),
+        Binding("r", "rename_selected", "Rename", show=False),
+        Binding("d", "delete_selected", "Delete", show=False),
+        Binding("s", "switch_selected", "Switch", show=False),
+        Binding("q", "dismiss(None)", "Close"),
         Binding("escape", "dismiss(None)", "Close"),
     ]
 
@@ -605,12 +720,21 @@ class SessionsScreen(ModalScreen[Path | None]):
     def __init__(self) -> None:
         super().__init__()
         self._paths: dict[str, Path] = {}
+        self._ids: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield OptionList(id="sess-list")
+        yield Static("Enter replay · r rename · d delete · s switch active · q close",
+                     classes="hint")
 
     def on_mount(self) -> None:
+        self._reload()
+
+    def _reload(self) -> None:
         opt_list = self.query_one(OptionList)
+        opt_list.clear_options()
+        self._paths = {}
+        self._ids = []
         sessions = sess.list_sessions()[: self.MAX_ROWS]
         if not sessions:
             opt_list.add_option(Option(f"(no sessions in {sess.sessions_dir()})", id=None))
@@ -619,26 +743,64 @@ class SessionsScreen(ModalScreen[Path | None]):
         for sp in sessions:
             rec = records.get(sp.stem)
             recs = sess.read_session(sp)
-            start = next((r for r in recs if r.get("event") == "start"), {})
-            result = next((r for r in recs if r.get("event") == "result"), {})
-            mark = "✓" if result.get("proved") else ("◼" if result.get("stopped") else "✘")
-            pid = start.get("problem_id") or "?"
-            steps = result.get("steps", "?")
-            secs = result.get("seconds", "?")
-            stats = calculate_session_stats(recs)
-            title = rec.title if rec is not None and rec.title else ""
-            label = (f"{mark} {sp.stem:<42} {pid!s:<26} steps={steps} {secs}s"
-                     f" {stats.total_tokens}t")
-            if title:
-                label += f"  [{title[:40]}]"
-            opt_list.add_option(Option(label, id=sp.stem))
+            opt_list.add_option(Option(build_session_label(sp, rec, recs), id=sp.stem))
             self._paths[sp.stem] = sp
+            self._ids.append(sp.stem)
+
+    def _highlighted_id(self) -> str | None:
+        idx = self.query_one(OptionList).highlighted
+        if idx is None or not (0 <= idx < len(self._ids)):
+            return None
+        return self._ids[idx]
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option.id:
             self.dismiss(self._paths.get(event.option.id))
         else:
             self.dismiss(None)
+
+    def action_open_selected(self) -> None:
+        sid = self._highlighted_id()
+        if sid is not None:
+            self.dismiss(self._paths.get(sid))
+
+    def action_rename_selected(self) -> None:
+        sid = self._highlighted_id()
+        if sid is None:
+            return
+        rec = SessionManager().get(sid)
+        current = rec.title if rec is not None else ""
+        self.app.push_screen(SessionRenameScreen(sid, current), self._on_renamed)
+
+    def _on_renamed(self, title: str | None) -> None:
+        sid = self._highlighted_id()
+        if title and sid:
+            SessionManager().rename(sid, title)
+            self.notify(f"Session renamed to {title}")
+            self._reload()
+
+    def action_delete_selected(self) -> None:
+        sid = self._highlighted_id()
+        if sid is None:
+            return
+        if SessionManager().delete(sid):
+            self.notify(f"Deleted session {sid}")
+            if getattr(self.app, "_active_session_id", None) == sid:
+                self.app._active_session_id = None
+            self._reload()
+        else:
+            self.notify(f"Session not found: {sid}", severity="error")
+
+    def action_switch_selected(self) -> None:
+        sid = self._highlighted_id()
+        if sid is None:
+            return
+        from .commands import CommandResult
+
+        self.app._apply_command(CommandResult(
+            handled=True, switch_session_id=sid,
+        ))
+        self.dismiss(None)
 
 
 class TrustScreen(ModalScreen[str | None]):
@@ -1022,14 +1184,14 @@ class ProverApp(App):
         import atexit
 
         atexit.register(self._terminal_title.restore)
-        self._stop_flag = False
-        self._run_active = False
+        self._active_session_id: str | None = None
         self._custom_seq = 0
         self._queued_prompts: list[str] = []
         self.counts = {"proved": 0, "failed": 0, "stopped": 0}
         self.command_registry = create_default_command_registry()
         self._live_tokens: int = 0
         self._live_cost: float = 0.0
+        self._run_active: bool = False
         self._compact_warning_shown: set[str] = set()  # track per-session
         mode = os.environ.get("PROVER_NOTIFICATION", self.tui_settings.notification)
         self._terminal_notification = TerminalNotificationController(mode)
@@ -1092,7 +1254,12 @@ class ProverApp(App):
 
     @property
     def current_session_id(self) -> str | None:
-        """The most recently updated recorded session (tau's active session)."""
+        """The most recently updated recorded session (tau's active session),
+        or the explicitly live-switched one when set."""
+        if self._active_session_id is not None:
+            if any(sp.stem == self._active_session_id for sp in sess.list_sessions()):
+                return self._active_session_id
+            self._active_session_id = None  # switched session was deleted
         sessions = sess.list_sessions()
         return sessions[0].stem if sessions else None
 
@@ -1322,7 +1489,14 @@ class ProverApp(App):
             self._emit_reload_summary(problems=0)
             return
         # Lazy load: don't populate the list yet; show search box instead
-        self.problems = load_problems()
+        try:
+            self.problems = load_problems()
+        except ValueError as exc:
+            self.problems = []
+            self._filtered_problems = []
+            self._log(f"[red]{exc}[/red]")
+            self._emit_reload_summary(problems=0)
+            return
         self._total_problems_in_file = len(self.problems)
         self._filtered_problems = []
         if not self.problems:
@@ -1468,6 +1642,7 @@ class ProverApp(App):
         self._compact_warning_shown = set()
         self._custom_seq = 0
         self._queued_prompts = []
+        self._active_session_id = None
         for row in self.query(ProblemRow):
             row.set_status("pending")
         for wid in ("#log", "#goals", "#errors", "#proof"):
@@ -1556,7 +1731,9 @@ class ProverApp(App):
         if result.fork_requested:
             self._fork_session(result.fork_path)
         if result.set_model_choice:
-            self._switch_model(result.set_model_choice)
+            self._switch_model(result.set_model_choice, result.set_model_provider)
+        if result.switch_session_id:
+            self._switch_session(result.switch_session_id)
         if result.login_requested and result.login_provider:
             self._login_provider(result.login_provider)
         if result.logout_requested and result.login_provider:
@@ -1609,17 +1786,51 @@ class ProverApp(App):
                 return
         self._branch_run(current, turn)
 
-    def _switch_model(self, name: str) -> None:
-        """/model <name> — activate a model profile by name."""
+    def _switch_model(self, name: str, provider: str | None = None) -> None:
+        """/model <name>[@provider] — activate a model profile, optionally bound
+        to a named provider's endpoint."""
         from . import models as models_mod
+        from .provider_config import provider_config_from_name
 
-        profile = models_mod.profile_for(name)
-        if profile is None:
-            self.notify(f"No profile named {name} — use /models to add one.", severity="warning")
-            return
-        models_mod.save_store(active=name)
-        self._log(f"model set to [bold]{name}[/bold]")
+        if provider:
+            pc = provider_config_from_name(provider)
+            if pc is None:
+                self.notify(f"No provider named {provider}.", severity="warning")
+                return
+            profiles = models_mod.load_profiles()
+            existing = next((p for p in profiles if p.name == name), None)
+            profile = ModelProfile(
+                name=name,
+                label=existing.label if existing else "",
+                base_url=pc.base_url or "",
+                api_key=pc.api_key or "",
+                context_window=(existing.context_window if existing
+                                else pc.max_context_window),
+                cost_in=existing.cost_in if existing else None,
+                cost_out=existing.cost_out if existing else None,
+            )
+            profiles = [p for p in profiles if p.name != name] + [profile]
+            models_mod.save_store(active=name, profiles=profiles)
+            self._log(f"model set to [bold]{name}[/bold] via [cyan]{provider}[/cyan]")
+        else:
+            profile = models_mod.profile_for(name)
+            if profile is None:
+                self.notify(f"No profile named {name} — use /models to add one.",
+                            severity="warning")
+                return
+            models_mod.save_store(active=name)
+            self._log(f"model set to [bold]{name}[/bold]")
         self._refresh_status()
+
+    def _switch_session(self, session_id: str) -> None:
+        """Make a recorded session the active/current one (live session switch)."""
+        if not any(sp.stem == session_id for sp in sess.list_sessions()):
+            self.notify(f"No recorded session named {session_id}.", severity="warning")
+            return
+        self._active_session_id = session_id
+        self._refresh_status()
+        self._log(f"active session switched to [bold]{session_id}[/bold]")
+        self.notify(f"Active session: {session_id}")
 
     def _login_provider(self, provider: str) -> None:
         """/login — run the provider's OAuth flow in a background worker."""
@@ -2013,7 +2224,7 @@ class ProverApp(App):
         if workers <= 1:
             for problem in problems:
                 if self._stop_flag:
-                    self._mark_pending_skipped(problems)
+                    self.call_from_thread(self._mark_pending_skipped, problems)
                     break
                 self._prove_one(problem)
         else:
@@ -2027,7 +2238,13 @@ class ProverApp(App):
         self.call_from_thread(self._run_done)
 
     def _mark_pending_skipped(self, problems: list[dict]) -> None:
-        pass  # rows simply stay pending; the stop log line explains it
+        """Mark rows that were still pending when a run stopped as skipped."""
+        for problem in problems:
+            row = self._row_by_id(problem["id"])
+            if row is not None and row.status == "pending":
+                row.set_status("stopped")
+                self.counts["stopped"] = self.counts.get("stopped", 0) + 1
+        self._refresh_status()
 
     def _prove_one(self, problem: dict) -> None:
         """Prove a single problem (called from a worker thread)."""
@@ -2145,8 +2362,7 @@ class ProverApp(App):
                 old = current
             diff = self._compute_diff(old, body)
             if diff:
-                panel = self.query_one("#proof", RichLog)
-                panel.write(escape(diff))
+                self.push_screen(ProofDiffScreen(problem_id, diff))
                 self._log(f"[dim]diff for {problem_id}: {len(diff.splitlines())} lines[/dim]")
         except Exception as exc:  # noqa: BLE001 — diff is best-effort
             self._log(f"[dim]diff failed: {exc}[/dim]")

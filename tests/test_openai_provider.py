@@ -2,7 +2,8 @@
 
 The network client is stubbed with a fake streaming `create()`; the tests
 drive the async generator and assert the Pi-style event sequence, tool-call
-reassembly, message/tool wire conversion, and cancellation.
+reassembly, message/tool wire conversion, cancellation, and compat-flag
+request shaping.
 """
 
 from __future__ import annotations
@@ -198,3 +199,102 @@ async def test_cancelled_signal_aborts_immediately() -> None:
     assert isinstance(evs[0], AssistantErrorEvent)
     assert evs[0].reason == "aborted"
     assert client.kwargs is None  # no request was made
+
+
+# ------------------------------------------------------------ compat flags
+
+
+def test_compat_flags_shape_request_kwargs(monkeypatch) -> None:
+    from agent.provider_config import OpenAICompatibleConfig
+
+    monkeypatch.setenv("PROVER_THINKING", "high")
+    compat = OpenAICompatibleConfig(
+        reasoning_effort=True,
+        thinking_format="openai",
+        zai_tool_stream=True,
+        content_response_format=True,
+        response_provider_header=True,
+        provider_key="zai",
+    )
+    p = OpenAICompatibleProvider(base_url="http://localhost/v1", api_key="k",
+                                 compat=compat, provider_name="foo")
+    kwargs = p._request_kwargs("m", [], [])
+    assert kwargs["reasoning_effort"] == "high"
+    assert kwargs["stream_options"] == {"include_usage": True}
+    assert kwargs["response_format"] == {"type": "text"}
+    assert kwargs["extra_headers"] == {"x-provider": "zai"}
+
+
+def test_compat_disabled_reasoning_effort_omits_param(monkeypatch) -> None:
+    from agent.provider_config import OpenAICompatibleConfig
+
+    monkeypatch.setenv("PROVER_THINKING", "high")
+    compat = OpenAICompatibleConfig(reasoning_effort=False)
+    p = OpenAICompatibleProvider(base_url="http://localhost/v1", api_key="k",
+                                 compat=compat)
+    kwargs = p._request_kwargs("m", [], [])
+    assert "reasoning_effort" not in kwargs
+
+
+def test_compat_qwen_format_toggles_thinking(monkeypatch) -> None:
+    from agent.provider_config import OpenAICompatibleConfig
+
+    monkeypatch.setenv("PROVER_THINKING", "off")
+    p = OpenAICompatibleProvider(
+        base_url="http://localhost/v1", api_key="k",
+        compat=OpenAICompatibleConfig(thinking_format="qwen"))
+    off_kwargs = p._request_kwargs("m", [], [])
+    assert off_kwargs["extra_body"] == {
+        "chat_template_kwargs": {"enable_thinking": False}}
+    monkeypatch.setenv("PROVER_THINKING", "low")
+    on_kwargs = p._request_kwargs("m", [], [])
+    assert on_kwargs["extra_body"] == {
+        "chat_template_kwargs": {"enable_thinking": True}}
+
+
+def test_compat_headers_become_client_default_headers() -> None:
+    p = OpenAICompatibleProvider(base_url="http://localhost/v1", api_key="k",
+                                 headers={"X-Org": "acme"})
+    assert p._headers == {"X-Org": "acme"}
+    assert p._client.default_headers.get("X-Org") == "acme"
+
+
+# ------------------------------------------------------------- oauth key
+
+
+def test_copilot_client_uses_exchanged_token(monkeypatch) -> None:
+    """Copilot inference must send the exchanged copilot key, not the raw
+    GitHub token: `_client_for` calls api_key_for_model (which exchanges),
+    and the resulting client is built with that key."""
+    from agent.oauth import access
+
+    captured: dict = {}
+
+    def _fake(model, store=None):
+        captured["model"] = model
+        return "exchanged-copilot-key"
+
+    monkeypatch.setattr(access, "api_key_for_model", _fake)
+    p = OpenAICompatibleProvider(base_url="http://localhost/v1", api_key="unused")
+    client = p._client_for("copilot-model")
+    assert captured["model"] == "copilot-model"
+    assert client.api_key == "exchanged-copilot-key"
+
+
+def test_other_oauth_provider_falls_back_to_raw_token(monkeypatch) -> None:
+    """Non-Copilot OAuth providers keep the raw bearer token (api_key_for_model
+    delegates to token_for_model for them)."""
+    from agent.oauth import access
+
+    captured: dict = {}
+
+    def _fake(model, store=None):
+        captured["model"] = model
+        return "raw-bearer"
+
+    monkeypatch.setattr(access, "api_key_for_model", _fake)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    p = OpenAICompatibleProvider(base_url="http://localhost/v1")
+    client = p._client_for("gpt-model")
+    assert captured["model"] == "gpt-model"
+    assert client.api_key == "raw-bearer"

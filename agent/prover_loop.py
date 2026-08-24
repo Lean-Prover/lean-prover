@@ -336,8 +336,23 @@ def prove(
         target_file.write_text(HEADER + lemma_bank + b + "\n")
 
     def check_file() -> tuple[bool, str]:
-        """Run `lean --check` on the target file for fast, isolated verification."""
-        return lean.check_file(target_file, lean_dir)
+        """Run `lean --check` on the target file for fast, isolated verification,
+        then the proof-integrity audit (injection scan + type-aware statement
+        check + kernel `#print axioms` audit). A lean pass is not enough on its
+        own: sorryAx / native_decide (Lean.ofReduceBool) / a custom `axiom` all
+        compile clean, so an audit failure is reported like a failed check —
+        the loop feeds it back for retry and never records/commits a proof that
+        is not audit-clean. The cheap regex scan always runs; the expensive
+        kernel audit is skipped under PROVER_SKIP_AXIOM_AUDIT=1."""
+        proved, output = lean.check_file(target_file, lean_dir)
+        if not proved:
+            return False, output
+        from .validate import audit_file
+
+        res = audit_file(target_file, lean_dir, expected_signature=statement)
+        if not res.ok:
+            return False, f"{res.reason}\n"
+        return True, output
 
     # LSP session for goal-state feedback (lazily started, may stay None).
     lsp_client: lsp.LeanLSP | None = None

@@ -157,6 +157,50 @@ class SessionManager:
         self.upsert(record)
         return record
 
+    def delete(self, session_id: str) -> bool:
+        """Remove a session's transcript and its index record. Returns True if
+        anything was removed (missing sessions return False, so callers can
+        report "not found" without clobbering real state)."""
+        removed = False
+        path = self.dir / f"{session_id}.jsonl"
+        if path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            removed = True
+        if self.index_path.exists():
+            lines: list[str] = []
+            dropped = False
+            for line in self.index_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    keep = json.loads(line).get("id") != session_id
+                except json.JSONDecodeError:
+                    keep = True
+                if not keep:
+                    dropped = True
+                    continue
+                lines.append(line)
+            if dropped:
+                payload = "\n".join(lines) + ("\n" if lines else "")
+                fd, tmp = tempfile.mkstemp(dir=self.dir, prefix=".index-")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        f.write(payload)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp, self.index_path)
+                    removed = True
+                except BaseException:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+                    raise
+        return removed
+
     @staticmethod
     def _problem_id_of(path: Path) -> str | None:
         for rec in sess.read_session(path):

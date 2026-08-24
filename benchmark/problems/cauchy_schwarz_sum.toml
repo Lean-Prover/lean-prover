@@ -1,0 +1,5 @@
+id = """cauchy_schwarz_sum"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_cauchy_schwarz_sum (f g : ℕ → ℝ) (n : ℕ) : (∑ i in Finset.range n, f i * g i) ^ 2 ≤ (∑ i in Finset.range n, f i ^ 2) * (∑ i in Finset.range n, g i ^ 2) := by
+  sorry"""

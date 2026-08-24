@@ -118,26 +118,39 @@ class _PendingToolCall:
 
 
 class OpenAICompatibleProvider:
-    def __init__(self, base_url: str | None = None, api_key: str | None = None) -> None:
+    def __init__(self, base_url: str | None = None, api_key: str | None = None,
+                 *, compat: object | None = None,
+                 headers: dict | None = None,
+                 provider_name: str = "openai-compatible") -> None:
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL")
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "unused")
         self._explicit_key = self.api_key != "unused"
+        self._compat = compat
+        self._headers = dict(headers or {})
+        self._provider_name = provider_name
         self._client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
             timeout=_TIMEOUT,
             max_retries=2,
+            default_headers=self._headers or None,
         )
         self._oauth_clients: dict[tuple[str | None, str], OpenAI] = {}
 
     def _client_for(self, model: str) -> OpenAI:
-        """Client honoring a stored OAuth credential when no API key is set."""
+        """Client honoring a stored OAuth credential when no API key is set.
+
+        Uses the *exchanged* inference key (``api_key_for_model``): GitHub
+        Copilot must send its short-lived ``copilot_internal/v2`` key, not the
+        raw GitHub OAuth token.  Non-Copilot providers fall through to the
+        OAuth bearer token as-is.
+        """
         if self._explicit_key:
             return self._client
         try:
-            from ..oauth.access import token_for_model
+            from ..oauth.access import api_key_for_model
 
-            token = token_for_model(model)
+            token = api_key_for_model(model)
         except Exception:  # noqa: BLE001 — auth fallback must never break calls
             token = None
         if not token:
@@ -146,9 +159,49 @@ class OpenAICompatibleProvider:
         cached = self._oauth_clients.get(key)
         if cached is None:
             cached = OpenAI(api_key=token, base_url=self.base_url,
-                            timeout=_TIMEOUT, max_retries=2)
+                            timeout=_TIMEOUT, max_retries=2,
+                            default_headers=self._headers or None)
             self._oauth_clients[key] = cached
         return cached
+
+    def _request_kwargs(self, model: str, ov_messages: list, ov_tools: list) -> dict:
+        """Build the chat-completions request, applying compat flags.
+
+        ``thinking_format``/``reasoning_effort`` translate the resolved
+        thinking level (agent/thinking.py) per backend dialect; the remaining
+        flags toggle endpoint-specific request extras.
+        """
+        kwargs: dict = {
+            "model": model,
+            "messages": ov_messages,
+            "tools": ov_tools or None,
+            "temperature": 0.2,
+            "max_tokens": 4096,
+            "stream": True,
+        }
+        compat = self._compat
+        if compat is None:
+            return kwargs
+        from ..thinking import reasoning_effort_for_level, thinking_level_from_env
+
+        level = thinking_level_from_env()
+        if compat.thinking_format == "qwen":
+            # vLLM/HF Qwen3 chat templates need an explicit enable_thinking
+            # switch; otherwise output lands in a `reasoning` field.
+            kwargs["extra_body"] = {
+                "chat_template_kwargs": {"enable_thinking": level != "off"}}
+        elif compat.reasoning_effort and level != "off":
+            kwargs["reasoning_effort"] = reasoning_effort_for_level(level)
+        if compat.zai_tool_stream:
+            # z.ai-class endpoints emit tool-call deltas only when usage is
+            # requested in the stream options.
+            kwargs["stream_options"] = {"include_usage": True}
+        if compat.content_response_format:
+            kwargs["response_format"] = {"type": "text"}
+        if compat.response_provider_header or compat.provider_key:
+            provider = compat.provider_key or self._provider_name
+            kwargs["extra_headers"] = {"x-provider": provider}
+        return kwargs
 
     async def stream_response(
         self,
@@ -179,13 +232,7 @@ class OpenAICompatibleProvider:
         def _run() -> None:
             try:
                 stream = self._client_for(model).chat.completions.create(
-                    model=model,
-                    messages=ov_messages,
-                    tools=ov_tools or None,
-                    temperature=0.2,
-                    max_tokens=4096,
-                    stream=True,
-                )
+                    **self._request_kwargs(model, ov_messages, ov_tools))
                 for chunk in stream:
                     if cancel_flag.is_set():
                         break

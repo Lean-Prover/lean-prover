@@ -83,7 +83,7 @@ class CommandResult:
     tree_picker_requested: bool = False          # /tree — session entry tree picker
     fork_requested: bool = False                 # /fork — branch at an entry
     fork_path: str | None = None                 # entry path ("3", "1.2")
-    switch_session_requested: bool = False       # switch_session flag (tau parity)
+    switch_session_id: str | None = None         #   target session id (live switch)
     set_model_choice: str | None = None          # /model <name> — model/provider choice
     set_model_provider: str | None = None        #   provider part of the choice
     set_thinking: str | None = None              # /thinking <level>

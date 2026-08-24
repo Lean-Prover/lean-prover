@@ -174,17 +174,40 @@ async def _after_tool_call(call, result, is_error):
 
 def _acl_hook():
     """Resolve the coding loop's per-tool ACL gate (default before_tool_call)."""
-    from .permissions import acl_before_tool_call
-
-    return acl_before_tool_call()
-
 
 def _provider_from_config(config: ProviderConfig | None):
+    """Instantiate a real per-backend provider adapter for the config's kind.
+
+    ``ProviderConfig.kind`` selects the native adapter (openai_compatible →
+    OpenAI SDK; anthropic → native Messages API; openai_codex → OpenAI SDK
+    against the Codex endpoint).  Compat flags/headers are forwarded so
+    per-backend feature translation is live, not dead config.
+    """
+    if config is None:
+        from .providers.openai_compatible import OpenAICompatibleProvider
+
+        return OpenAICompatibleProvider()
+    if config.kind == "anthropic":
+        from .providers.anthropic import AnthropicProvider
+
+        return AnthropicProvider(
+            base_url=config.base_url or None,
+            api_key=config.effective_api_key,
+            headers=config.headers,
+            provider_name=config.name,
+        )
     from .providers.openai_compatible import OpenAICompatibleProvider
 
-    base_url = config.base_url if config else ""
-    api_key = config.effective_api_key if config else None
-    return OpenAICompatibleProvider(base_url=base_url or None, api_key=api_key)
+    base_url = config.base_url or None
+    if config.kind == "openai_codex" and not base_url:
+        base_url = "https://api.openai.com/v1"
+    return OpenAICompatibleProvider(
+        base_url=base_url,
+        api_key=config.effective_api_key,
+        compat=config.compat,
+        headers=config.headers,
+        provider_name=config.name,
+    )
 
 
 def _lean_tools(lean_dir: Path) -> list:

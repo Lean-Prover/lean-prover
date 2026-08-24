@@ -103,4 +103,12 @@ problems = [
 { id = "four_squares", revision = 1 },
 { id = "prime_sq_add_sq", revision = 1 },
 { id = "prime_dvd_pow", revision = 1 },
+{ id = "fermat_little", revision = 1 },
+{ id = "wilson_theorem", revision = 1 },
+{ id = "gcd_pow", revision = 1 },
+{ id = "coprime_pow_right", revision = 1 },
+{ id = "pow_two_le_factorial", revision = 1 },
+{ id = "sum_squares_mul", revision = 1 },
+{ id = "euler_phi_mul", revision = 1 },
+{ id = "cauchy_schwarz_sum", revision = 1 },
 ]

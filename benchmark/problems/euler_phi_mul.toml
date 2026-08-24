@@ -1,0 +1,5 @@
+id = """euler_phi_mul"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_euler_phi_mul (m n : ℕ) (h : Nat.Coprime m n) : Nat.totient (m * n) = Nat.totient m * Nat.totient n := by
+  sorry"""

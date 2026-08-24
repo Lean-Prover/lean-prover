@@ -1,0 +1,5 @@
+id = """fermat_little"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_fermat_little (p a : ℕ) (hp : Nat.Prime p) : a ^ p % p = a % p := by
+  sorry"""

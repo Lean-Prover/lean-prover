@@ -1,0 +1,5 @@
+id = """pow_two_le_factorial"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_pow_two_le_factorial (n : ℕ) (h : 4 ≤ n) : n ^ 2 ≤ Nat.factorial n := by
+  sorry"""

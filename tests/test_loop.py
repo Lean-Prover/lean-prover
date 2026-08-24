@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from agent import llm, loop
+from agent import llm, loop, retrieval
 
 STATEMENT = "theorem prover_loop (n : ℕ) : n + 0 = n := by sorry"
 
@@ -22,9 +22,16 @@ PASS_ON_STEP2 = 3
 
 @pytest.fixture
 def hermetic(tmp_path: Path, monkeypatch):
-    """Point all ~/.prover writes and the Lean dir at tmp_path."""
+    """Point all ~/.prover writes and the Lean dir at tmp_path.
+
+    The Lean toolchain (``lean.check_file``) is mocked by these control-flow
+    tests, so the kernel `#print axioms` audit cannot produce real output and
+    would fail-closed on every success. Skip it here; the audit-gate tests
+    below re-enable it explicitly (PROVER_SKIP_AXIOM_AUDIT unset) and mock the
+    audit probe. The cheap injection scan and statement check still run."""
     monkeypatch.setenv("PROVER_SESSIONS_DIR", str(tmp_path / "sessions"))
     monkeypatch.setenv("PROVER_LOGS_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("PROVER_SKIP_AXIOM_AUDIT", "1")
     monkeypatch.setattr(loop, "LEAN_DIR", tmp_path)
     # Far above any realistic history so auto-compaction never fires via tokens.
     monkeypatch.setattr(llm, "context_window_tokens", lambda: 1_000_000)
@@ -779,9 +786,101 @@ def test_adaptive_steps_no_extend_without_progress(hermetic, monkeypatch) -> Non
 
     monkeypatch.setattr(loop.lean, "check_file", check)
     _chat_with(monkeypatch, ["```lean\n  simp\n```"] * 20)
-    r = loop.prove(STATEMENT, max_steps=4, verbose=False,
-                   problem_id="adaptive2", goal_feedback=False,
-                   record_session=False, skip_hammers=True, adaptive_steps=True)
+    loop.prove(STATEMENT, max_steps=4, verbose=False,
+               problem_id="adaptive2", goal_feedback=False,
+               record_session=False, skip_hammers=True, adaptive_steps=True)
+# ---------------------------------------------------------------- audit gate
+# The loop success path must reject proofs that compile clean but leak illegal
+# axioms (sorryAx / native_decide via Lean.ofReduceBool / a custom `axiom`).
+# `lean.check_file` is mocked CLEAN for the target file, so any rejection is
+# provably the audit's doing; corpus_append must never run on such a proof.
+
+def _audit_probe_check(monkeypatch, probe_output: str) -> None:
+    """Fake `lean.check_file`: clean for the target file; returns probe_output
+    for the `#print axioms` audit probe (path contains ``Audit_``)."""
+
+    def fake(file: Path, _dir: Path, timeout: int = 60):
+        if "Audit_" in file.name:
+            return True, probe_output
+        return True, ""
+
+    monkeypatch.setattr(loop.lean, "check_file", fake)
+
+
+def _audit_run(monkeypatch, body: str, max_steps: int = 2) -> loop.Result:
+    """Drive the loop (hammers skipped) to an LLM-supplied proof body with the
+    audit fully ON (PROVER_SKIP_AXIOM_AUDIT unset)."""
+    monkeypatch.delenv("PROVER_SKIP_AXIOM_AUDIT", raising=False)
+    _chat_with(monkeypatch, [f"```lean\n{body}\n```"])
+    return loop.prove(STATEMENT, max_steps=max_steps, verbose=False,
+                      problem_id="audit", goal_feedback=False,
+                      record_session=False, skip_hammers=True)
+
+
+def test_audit_gate_rejects_native_decide(hermetic, monkeypatch) -> None:
+    """`by native_decide` compiles clean but depends on Lean.ofReduceBool,
+    which the kernel audit flags — the loop reports not-proved and never
+    appends to the corpus."""
+    _audit_probe_check(monkeypatch, "'t' depends on axioms: [propext, Lean.ofReduceBool]\n")
+    appended: list = []
+    monkeypatch.setattr(retrieval, "corpus_append", lambda *a, **k: appended.append(a))
+    r = _audit_run(monkeypatch, "  native_decide")
     assert not r.proved
-    assert "extend" not in [e["event"] for e in r.trace]
-    assert r.steps == 4
+    assert appended == []
+
+
+def test_audit_gate_rejects_custom_axiom(hermetic, monkeypatch) -> None:
+    """A proof that declares a custom `axiom` is caught by the injection scan
+    (always on) and never recorded."""
+    _audit_probe_check(monkeypatch, "'t' does not depend on any axioms\n")
+    appended: list = []
+    monkeypatch.setattr(retrieval, "corpus_append", lambda *a, **k: appended.append(a))
+    r = _audit_run(monkeypatch, "  axiom evil : True\n  exact evil")
+    assert not r.proved
+    assert appended == []
+
+
+def test_audit_gate_rejects_sorry(hermetic, monkeypatch) -> None:
+    """A `sorry` in the proof is caught by the injection scan (always on) and
+    never recorded."""
+    _audit_probe_check(monkeypatch, "'t' does not depend on any axioms\n")
+    appended: list = []
+    monkeypatch.setattr(retrieval, "corpus_append", lambda *a, **k: appended.append(a))
+    r = _audit_run(monkeypatch, "  sorry")
+    assert not r.proved
+    assert appended == []
+
+
+def test_audit_clean_proof_is_proved_and_appended(hermetic, monkeypatch) -> None:
+    """An audit-clean proof passes the gate and IS recorded: the native hammer
+    closes it in one call with no offending axioms."""
+    monkeypatch.delenv("PROVER_SKIP_AXIOM_AUDIT", raising=False)
+    monkeypatch.delenv("PROVER_CORPUS_GROW", raising=False)
+    _audit_probe_check(monkeypatch, "'t' does not depend on any axioms\n")
+    _chat_with(monkeypatch, ["```lean\n  simp\n```"])
+    r = loop.prove(STATEMENT, max_steps=5, verbose=False,
+                   problem_id="audit-clean", goal_feedback=False,
+                   record_session=False, skip_hammers=True)
+    assert r.proved
+    # corpus_append is imported locally inside prover_loop; PROVER_LEAN_DIR
+    # (conftest) points it at tmp/lean, so read the per-test corpus it wrote.
+    corpus = retrieval.corpus_path(hermetic / "lean")
+    assert corpus.exists()
+    assert STATEMENT.split(":=")[0].strip() in corpus.read_text()
+
+
+def test_audit_skip_env_restores_old_behavior(hermetic, monkeypatch) -> None:
+    """PROVER_SKIP_AXIOM_AUDIT=1 restores the old non-audited behavior: a
+    native_decide proof that would fail the kernel audit is accepted."""
+    monkeypatch.delenv("PROVER_CORPUS_GROW", raising=False)
+    _audit_probe_check(monkeypatch, "'t' depends on axioms: [Lean.ofReduceBool]\n")
+    _chat_with(monkeypatch, ["```lean\n  native_decide\n```"])
+    r = loop.prove(STATEMENT, max_steps=3, verbose=False,
+                   problem_id="audit-skip", goal_feedback=False,
+                   record_session=False, skip_hammers=True)
+    # step 1 (sorry placeholder) is rejected by the always-on injection scan;
+    # step 2's native_decide body is accepted because the kernel audit is off.
+    assert r.proved
+    corpus = retrieval.corpus_path(hermetic / "lean")
+    assert corpus.exists()
+    assert STATEMENT.split(":=")[0].strip() in corpus.read_text()

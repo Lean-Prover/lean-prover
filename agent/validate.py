@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,26 +74,48 @@ def audit_axioms(lean_file: Path, lean_dir: Path, name: str, timeout: int = 60) 
             pass
 
 
-def validate_file(lean_file: Path, lean_dir: Path, expected_signature: str | None = None, timeout: int = 60) -> ValidationResult:
+def _statement_mismatch(text: str, expected_signature: str) -> str | None:
+    """Type-aware statement check: the file's target declaration must carry the
+    expected name AND statement/type — not just the name. Returns a reason
+    string on mismatch, else None. Best-effort: exact structural match on the
+    normalized declaration (name + binders + type), so a renamed or retyped
+    theorem is rejected while whitespace/line-break churn is tolerated.
+    """
+    expected = expected_signature.strip()
+    # Drop the proof body (and any trailing `:= by`) so only the declaration
+    # remains; a bare signature with no `:= by` is left intact.
+    expected = expected.rsplit(":= by", 1)[0].strip()
+    # The declaration keyword (theorem/lemma/example/def) is incidental.
+    expected = re.sub(r"^(?:theorem|lemma|example|def)\s+", "", expected)
+    norm_expected = re.sub(r"\s+", " ", expected).strip()
+    if not norm_expected:
+        return None
+    name = norm_expected.split(" ", 1)[0]
+    norm_text = re.sub(r"\s+", " ", text)
+    if norm_expected in norm_text:
+        return None
+    return f"statement mismatch for {name}: expected '{norm_expected}' not found in file"
+
+
+def audit_file(lean_file: Path, lean_dir: Path, expected_signature: str | None = None, timeout: int = 60) -> ValidationResult:
+    """Proof-integrity audit for a file that already compiled clean.
+
+    The cheap regex injection scan and the type-aware statement check always
+    run; the expensive kernel `#print axioms` audit runs unless
+    PROVER_SKIP_AXIOM_AUDIT=1 (default STRICT ON). Does NOT re-run the base
+    compile — callers do that. ``ok`` means no illegal axiom, injection, or
+    statement mismatch was found.
+    """
     text = lean_file.read_text(errors="replace") if lean_file.exists() else ""
     injections = _find_axiom_injections(text)
     if injections:
         return ValidationResult(ok=False, reason=f"illegal axiom injection: {','.join(injections)}", output=text[:4000], axioms_found=injections)
-    proved, output = lean.check_file(lean_file, lean_dir, timeout=timeout)
-    if not proved:
-        return ValidationResult(ok=False, reason="lean check failed", output=output, axioms_found=[])
     if expected_signature:
-        # Last `:= by`: statements with scaffolding declarations before the
-        # target theorem (Putnam `_solution` abbrevs, FormalQualBench defs)
-        # carry several; the theorem is always the final declaration.
-        sig = expected_signature.strip().rsplit(":= by", 1)[0].strip()
-        name_m = re.search(r"theorem\s+(\w+)", sig)
-        if name_m:
-            name = name_m.group(1)
-            if name not in text:
-                return ValidationResult(ok=False, reason=f"theorem {name} not found — statement mismatch", output=output, axioms_found=[])
-    if "axiom" in output.lower():
-        return ValidationResult(ok=False, reason="axiom in lean output", output=output, axioms_found=["axiom-output"])
+        reason = _statement_mismatch(text, expected_signature)
+        if reason:
+            return ValidationResult(ok=False, reason=reason, output=text[:4000], axioms_found=[])
+    if os.environ.get("PROVER_SKIP_AXIOM_AUDIT") == "1":
+        return ValidationResult(ok=True, reason="kernel audit skipped (PROVER_SKIP_AXIOM_AUDIT=1)", output="", axioms_found=[])
     # Kernel-level audit: the last declaration is the target theorem (see
     # _split_signature in prover_loop.py). Follows dependencies, so sorryAx
     # reaching through helper lemmas is caught too.
@@ -101,8 +124,22 @@ def validate_file(lean_file: Path, lean_dir: Path, expected_signature: str | Non
         ok, bad, reason = audit_axioms(lean_file, lean_dir, names[-1], timeout=timeout)
         if not ok:
             detail = f": {','.join(bad)}" if bad else (f" ({reason})" if reason else "")
-            return ValidationResult(ok=False, reason=f"axiom audit failed{detail}", output=output, axioms_found=bad)
-    return ValidationResult(ok=True, reason="comparator pass", output=output, axioms_found=[])
+            return ValidationResult(ok=False, reason=f"axiom audit failed{detail}", output="", axioms_found=bad)
+    return ValidationResult(ok=True, reason="comparator pass", output="", axioms_found=[])
+
+
+def validate_file(lean_file: Path, lean_dir: Path, expected_signature: str | None = None, timeout: int = 60) -> ValidationResult:
+    text = lean_file.read_text(errors="replace") if lean_file.exists() else ""
+    injections = _find_axiom_injections(text)
+    if injections:
+        return ValidationResult(ok=False, reason=f"illegal axiom injection: {','.join(injections)}", output=text[:4000], axioms_found=injections)
+    proved, output = lean.check_file(lean_file, lean_dir, timeout=timeout)
+    if not proved:
+        return ValidationResult(ok=False, reason="lean check failed", output=output, axioms_found=[])
+    if "axiom" in output.lower():
+        return ValidationResult(ok=False, reason="axiom in lean output", output=output, axioms_found=["axiom-output"])
+    # Type-aware statement check + (skippable) kernel axiom audit.
+    return audit_file(lean_file, lean_dir, expected_signature=expected_signature, timeout=timeout)
 
 
 def validate_text(text: str, lean_dir: Path, expected_signature: str | None = None, timeout: int = 60) -> ValidationResult:

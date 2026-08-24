@@ -76,8 +76,13 @@ def _prove_one(p: dict, max_steps: int, idx: int, total: int, goal_feedback: boo
                       goal_feedback=goal_feedback, record_session=record_session,
                       skip_hammers=skip_hammers, difficulty=p.get("difficulty"),
                       full_file=full_file, adaptive_steps=adaptive_steps)
+    from .problems import statement_hash
+
     result = {
         "id": p["id"],
+        "difficulty": p.get("difficulty"),
+        "statement": p["statement"],
+        "statement_hash": statement_hash(p["statement"]),
         "proved": r.proved,
         "steps": r.steps,
         "seconds": round(r.seconds, 1),
@@ -101,9 +106,14 @@ def cmd_bench(args: argparse.Namespace) -> int:
     _warn_model_mismatch()
     from .problems import active_problems, load_problems
 
+    problems_all = load_problems(args.problems)
+    drifted = _check_frozen_set(args.problems, getattr(args, "set", DEFAULT_SET),
+                                problems_all)
+    if drifted:
+        _report_drift(drifted, getattr(args, "set", DEFAULT_SET))
+        return 1
     start = args.start - 1  # 1-indexed for humans
-    problems = [p.as_dict() for p in
-                active_problems(load_problems(args.problems))[start:]]
+    problems = [p.as_dict() for p in active_problems(problems_all)[start:]]
     results = []
     total_tokens = 0
     total_cost = 0.0
@@ -166,7 +176,13 @@ def cmd_bench(args: argparse.Namespace) -> int:
         solved = sum(1 for r in results if r["proved"])
         print(f"Validated score: {solved}/{len(results)}")
     if args.report:
-        Path(args.report).write_text(json.dumps({"score": solved, "total": len(results), "total_tokens": total_tokens, "total_cost_usd": round(total_cost, 6), "results": results}, indent=2))
+        Path(args.report).write_text(json.dumps({
+            "score": solved, "total": len(results),
+            "total_tokens": total_tokens, "total_cost_usd": round(total_cost, 6),
+            "max_steps": args.max_steps, "solver": LEADERBOARD_SOLVER,
+            "schema_version": SCHEMA_VERSION,
+            "results": results, **provenance(args.problems),
+        }, indent=2))
         print(f"Report written to {args.report}")
     return 0
 
@@ -382,6 +398,9 @@ def cmd_sessions(args: argparse.Namespace) -> int:
 
 
 BOARD_FILE = "leaderboard.json"
+SCHEMA_VERSION = 1
+LEADERBOARD_SOLVER = "prove_best_of"
+DEFAULT_SET = "core"
 
 
 def provenance(problems_path: str | None = None) -> dict:
@@ -429,6 +448,180 @@ def provenance(problems_path: str | None = None) -> dict:
         "toolchain": toolchain,
         "problems_sha256": problems_sha256,
     }
+
+
+def _check_frozen_set(problems_path: str, set_name: str, problems) -> list[str]:
+    """Frozen-set drift messages for the eval set, or [] when clean/absent."""
+    from pathlib import Path as _Path
+
+    from .problems import check_frozen_set, load_frozen_set
+
+    sp = _Path(problems_path).parent / "sets" / f"{set_name}.toml"
+    if not sp.exists():
+        return []
+    pinned = load_frozen_set(sp)
+    return [
+        f"{m.id} (frozen rev {m.set_revision}, current {m.actual_revision})"
+        for m in check_frozen_set(pinned, problems)
+    ]
+
+
+def _report_drift(drifted: list[str], set_name: str) -> None:
+    print(f"[frozen set '{set_name}'] refusing to run: {len(drifted)} pinned "
+          "problem(s) drifted from their frozen revision", file=sys.stderr)
+    for line in drifted[:20]:
+        print(f"  {line}", file=sys.stderr)
+    print("  regenerate the frozen set or fix the manifests, then re-run.",
+          file=sys.stderr)
+
+
+def _current_statement_hashes(problems_path: str) -> dict[str, str]:
+    """{problem_id: statement_hash} for the active problems at a path."""
+    from .problems import active_problems, load_problems, statement_hash
+
+    try:
+        probs = active_problems(load_problems(problems_path))
+    except (OSError, ValueError):
+        return {}
+    return {pr.id: statement_hash(pr.statement) for pr in probs}
+
+
+def _current_config(args: argparse.Namespace) -> dict:
+    """The config an entry must match to be comparable with the current run."""
+    prov = provenance(args.problems)
+    return {
+        "solver": LEADERBOARD_SOLVER,
+        "max_steps": args.max_steps,
+        "problems_sha256": prov.get("problems_sha256"),
+        "toolchain": prov.get("toolchain"),
+        "statement_hashes": _current_statement_hashes(args.problems),
+    }
+
+
+def _entry_reasons(entry: dict, config: dict) -> list[str]:
+    """Incompatibility reasons making an entry non-comparable; [] => comparable."""
+    reasons: list[str] = []
+    if entry.get("schema_version") != SCHEMA_VERSION:
+        reasons.append(f"schema_version={entry.get('schema_version')!r} (need {SCHEMA_VERSION})")
+    for key in ("max_steps", "solver", "problems_sha256", "toolchain"):
+        if entry.get(key) != config.get(key):
+            reasons.append(f"{key}={entry.get(key)!r} (need {config.get(key)!r})")
+    if entry.get("problems_sha256") == config.get("problems_sha256"):
+        hashes = entry.get("statement_hashes") or {}
+        current = config.get("statement_hashes") or {}
+        drifted = sorted(pid for pid, h in hashes.items() if current.get(pid) != h)
+        if drifted:
+            reasons.append(f"{len(drifted)} statement(s) drifted: {', '.join(drifted[:5])}")
+    return reasons
+
+
+def _same_config(entry: dict, config: dict) -> bool:
+    return all(
+        entry.get(key) == config.get(key)
+        for key in ("max_steps", "solver", "problems_sha256", "toolchain")
+    )
+
+
+def _upsert_board(board: list[dict], entry: dict, config: dict) -> list[dict]:
+    """Append a run, superseding any older run of the same name+config so names
+    stay unique; sort by score descending."""
+    name = entry.get("name")
+    kept = [
+        e for e in board
+        if not (e.get("name") == name and _same_config(e, config))
+    ]
+    kept.append(entry)
+    kept.sort(key=lambda e: e.get("score", 0), reverse=True)
+    return kept
+
+
+def _leaderboard_run(args: argparse.Namespace) -> int:
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from .problems import active_problems, load_problems
+
+    problems_all = load_problems(args.problems)
+    drifted = _check_frozen_set(args.problems, getattr(args, "set", DEFAULT_SET),
+                                problems_all)
+    if drifted:
+        _report_drift(drifted, getattr(args, "set", DEFAULT_SET))
+        return 1
+
+    problems = [p.as_dict() for p in active_problems(problems_all)]
+    results = []
+    for i, p in enumerate(problems, 1):
+        result, _tokens, _cost = _prove_one(p, args.max_steps, i, len(problems))
+        results.append(result)
+
+    score = sum(1 for r in results if r["proved"])
+    by_tier: dict[str, dict] = {}
+    for r in results:
+        t = by_tier.setdefault(r.get("difficulty", "?"), {"proved": 0, "total": 0})
+        t["total"] += 1
+        t["proved"] += int(r["proved"])
+
+    prov = provenance(args.problems)
+    config = {
+        "max_steps": args.max_steps,
+        "solver": LEADERBOARD_SOLVER,
+        "problems_sha256": prov.get("problems_sha256"),
+        "toolchain": prov.get("toolchain"),
+    }
+    name = args.name or os.environ.get("PROVER_MODEL", "unknown")
+    board = load_board()
+    prev = next(
+        (e for e in board if e.get("name") == name and _same_config(e, config)),
+        None,
+    )
+    now = datetime.now(timezone.utc)
+    entry = {
+        "name": name,
+        "score": score,
+        "total": len(results),
+        "tiers": by_tier,
+        "max_steps": args.max_steps,
+        "solver": LEADERBOARD_SOLVER,
+        "schema_version": SCHEMA_VERSION,
+        "result_version": (prev.get("result_version", 0) if prev else 0) + 1,
+        "date": now.strftime("%Y-%m-%d"),
+        "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "statement_hashes": {r["id"]: r["statement_hash"] for r in results},
+        **prov,
+    }
+    board = _upsert_board(board, entry, config)
+    Path(BOARD_FILE).write_text(json.dumps(board, indent=2) + "\n")
+    print(f"\nRecorded: {entry['name']} {score}/{len(results)} → {BOARD_FILE}")
+    return 0
+
+
+def _leaderboard_show(args: argparse.Namespace) -> int:
+    board = load_board()
+    if not board:
+        print("Leaderboard is empty. Run `prover leaderboard --run` after a benchmark.")
+        return 0
+    config = _current_config(args)
+    comparable, stale = [], []
+    for e in board:
+        reasons = _entry_reasons(e, config)
+        (comparable if not reasons else stale).append((e, reasons))
+
+    print(f"{'#':>2} {'name':<28} {'score':>5}  tiers")
+    for i, (e, _r) in enumerate(comparable, 1):
+        tiers = " ".join(f"{t}:{v['proved']}/{v['total']}"
+                         for t, v in sorted(e.get("tiers", {}).items()))
+        print(f"{i:>2} {e.get('name','?'):<28} {e.get('score',0):>3}/{e.get('total','?')}  {tiers}")
+    if stale:
+        print(f"\n{len(stale)} stale / non-comparable entry(ies) excluded from ranking:")
+        for e, reasons in stale:
+            print(f"  - {e.get('name','?')}: {', '.join(reasons)}")
+    return 0
+
+
+def cmd_leaderboard(args: argparse.Namespace) -> int:
+    if args.run:
+        return _leaderboard_run(args)
+    return _leaderboard_show(args)
 
 
 def cmd_login(args: argparse.Namespace) -> int:
@@ -482,52 +675,6 @@ def load_board() -> list[dict]:
         return json.loads(p.read_text())
     except (json.JSONDecodeError, OSError):
         return []
-
-
-def cmd_leaderboard(args: argparse.Namespace) -> int:
-    from datetime import datetime, timezone
-    from pathlib import Path
-
-    board = load_board()
-    if not args.show and args.run:
-        from .loop import prove
-        from .problems import active_problems, load_problems
-
-        problems = [p.as_dict() for p in active_problems(load_problems(args.problems))]
-        results = []
-        for i, p in enumerate(problems, 1):
-            print(f"[{i}/{len(problems)}] {p['id']}")
-            r = prove(p["statement"], max_steps=args.max_steps, verbose=False, problem_id=p["id"])
-            results.append({"id": p["id"], "difficulty": p["difficulty"], "proved": r.proved})
-        score = sum(1 for r in results if r["proved"])
-        by_tier: dict[str, dict] = {}
-        for r in results:
-            t = by_tier.setdefault(r["difficulty"], {"proved": 0, "total": 0})
-            t["total"] += 1
-            t["proved"] += int(r["proved"])
-        entry = {
-            "name": args.name or os.environ.get("PROVER_MODEL", "unknown"),
-            "score": score,
-            "total": len(results),
-            "tiers": by_tier,
-            "max_steps": args.max_steps,
-            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            **provenance(args.problems),
-        }
-        board.append(entry)
-        board.sort(key=lambda e: -e["score"])
-        Path(BOARD_FILE).write_text(json.dumps(board, indent=2) + "\n")
-        print(f"\nRecorded: {entry['name']} {score}/{len(results)} → {BOARD_FILE}")
-        return 0
-
-    if not board:
-        print("Leaderboard is empty. Run `prover leaderboard --run` after a benchmark.")
-        return 0
-    print(f"{'#':>2} {'name':<28} {'score':>5}  tiers")
-    for i, e in enumerate(board, 1):
-        tiers = " ".join(f"{t}:{v['proved']}/{v['total']}" for t, v in sorted(e.get("tiers", {}).items()))
-        print(f"{i:>2} {e.get('name','?'):<28} {e.get('score',0):>3}/{e.get('total','?')}  {tiers}")
-    return 0
 
 
 def cmd_ask(args: argparse.Namespace) -> int:
@@ -624,6 +771,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     b = sub.add_parser("bench", help="run the benchmark suite")
     b.add_argument("--problems", default="benchmark/problems.json")
+    b.add_argument("--set", default=DEFAULT_SET,
+                   help="frozen set to drift-check against (benchmark/sets/<name>.toml)")
     b.add_argument("--max-steps", type=int, default=proj_max_steps)
     b.add_argument("--start", type=int, default=1, help="resume from problem N (1-indexed)")
     b.add_argument("--report", default=None)
@@ -764,6 +913,8 @@ def _build_parser() -> argparse.ArgumentParser:
     lb.add_argument("--run", action="store_true",
                     help="run the benchmark first, then record the score")
     lb.add_argument("--problems", default="benchmark/problems.json")
+    lb.add_argument("--set", default=DEFAULT_SET,
+                   help="frozen set to drift-check against (benchmark/sets/<name>.toml)")
     lb.add_argument("--max-steps", type=int, default=proj_max_steps)
     lb.add_argument("--name", default=None, help="entry name (default: model or env)")
     lb.add_argument("--show", action="store_true", help="only show current leaderboard")

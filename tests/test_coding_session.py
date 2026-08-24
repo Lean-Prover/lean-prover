@@ -276,14 +276,56 @@ def test_provider_config_legacy_models_migration(tmp_path, monkeypatch) -> None:
     assert configs[0].max_context_window == 9
 
 
-def test_effective_provider_configs_defaults(tmp_path, monkeypatch) -> None:
-    from agent import provider_config as pc
+# ------------------------------------------------------- provider kind routing
 
-    monkeypatch.setenv("PROVER_CONFIG_DIR", str(tmp_path))
-    monkeypatch.delenv("PROVER_PROVIDERS_PATH", raising=False)
-    names = [c.name for c in pc.effective_provider_configs()]
-    assert "qwen-local" in names and "openai" in names
-    assert pc.provider_config_from_name("qwen-local") is not None
+
+def test_provider_from_config_routes_by_kind(monkeypatch) -> None:
+    """ProviderConfig.kind must select a real per-backend adapter, not always
+    OpenAICompatibleProvider."""
+    from agent import coding_session
+    from agent.provider_config import ProviderConfig
+    from agent.providers.anthropic import AnthropicProvider
+    from agent.providers.openai_compatible import OpenAICompatibleProvider
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    anthropic = coding_session._provider_from_config(
+        ProviderConfig(name="claude", kind="anthropic",
+                       base_url="https://api.anthropic.com"))
+    assert isinstance(anthropic, AnthropicProvider)
+    assert anthropic.api_key is None  # resolved lazily at request time
+
+    oai = coding_session._provider_from_config(
+        ProviderConfig(name="local", kind="openai_compatible",
+                       base_url="http://localhost/v1"))
+    assert isinstance(oai, OpenAICompatibleProvider)
+
+    codex = coding_session._provider_from_config(
+        ProviderConfig(name="codex", kind="openai_codex"))
+    assert isinstance(codex, OpenAICompatibleProvider)
+    assert codex.base_url == "https://api.openai.com/v1"
+
+    none_provider = coding_session._provider_from_config(None)
+    assert isinstance(none_provider, OpenAICompatibleProvider)
+
+
+def test_provider_from_config_forwards_compat_and_headers() -> None:
+    from agent import coding_session
+    from agent.provider_config import OpenAICompatibleConfig, ProviderConfig
+    from agent.providers.openai_compatible import OpenAICompatibleProvider
+
+    p = coding_session._provider_from_config(ProviderConfig(
+        name="qwen-local",
+        kind="openai_compatible",
+        base_url="http://localhost/v1",
+        headers={"X-Org": "acme"},
+        compat=OpenAICompatibleConfig(thinking_format="qwen",
+                                      reasoning_effort=True),
+    ))
+    assert isinstance(p, OpenAICompatibleProvider)
+    assert p._compat.thinking_format == "qwen"
+    assert p._headers == {"X-Org": "acme"}
 
 
 # ------------------------------------------------------------- harness bits

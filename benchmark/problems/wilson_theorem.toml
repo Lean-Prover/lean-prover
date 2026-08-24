@@ -1,0 +1,5 @@
+id = """wilson_theorem"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_wilson_theorem (p : ℕ) (hp : Nat.Prime p) : Nat.factorial (p - 1) % p = p - 1 := by
+  sorry"""

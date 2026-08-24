@@ -102,3 +102,39 @@ def test_dir_digest_stable_and_content_sensitive(tmp_path: Path) -> None:
     _write_manifest(d, "a", 'difficulty = "trivial"\nstatement = "s2"\n')
     assert dir_digest(d) != d1
     assert dir_digest(tmp_path / "nope") is None
+
+
+# ---- corpus growth: problems.json <-> problems/*.toml <-> sets/core.toml ----
+
+def test_benchmark_corpus_consistent() -> None:
+    """The committed eval corpus stays internally consistent (no contamination)."""
+    import json as _json
+
+    import tomllib
+
+    from agent.problems import (
+        check_frozen_set,
+        load_frozen_set,
+        load_problems,
+    )
+
+    root = Path(__file__).resolve().parent.parent
+    json_probs = _json.loads((root / "benchmark" / "problems.json").read_text())
+    json_ids = {p["id"] for p in json_probs}
+    toml_probs = load_problems(root / "benchmark" / "problems")
+    assert json_ids == {p.id for p in toml_probs}
+    # difficulty distribution is identical in both representations
+    json_diffs = sorted({p["difficulty"] for p in json_probs})
+    toml_diffs = sorted({p.difficulty for p in toml_probs})
+    assert json_diffs == toml_diffs == ["easy", "hard", "medium", "trivial"]
+    # every manifest is pinned at revision 1 in the frozen set (no drift)
+    pinned = load_frozen_set(root / "benchmark" / "sets" / "core.toml")
+    assert check_frozen_set(pinned, toml_probs) == []
+    assert set(pinned) == json_ids
+    # the hard tier has grown past the original 20 hand-authored problems
+    hard = sum(1 for p in json_probs if p["difficulty"] == "hard")
+    assert hard > 20
+    # count parity across all three artifacts
+    set_ids = {e["id"] for e in tomllib.loads(
+        (root / "benchmark" / "sets" / "core.toml").read_text())["problems"]}
+    assert set_ids == json_ids
