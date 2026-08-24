@@ -7,4 +7,15 @@ lean/build/
 lean/tmp/
 report.json
 .env
-.pytest_cache/
+# Generated run artifacts — regenerate, do not commit
+benchmark/*_baseline*.json
+benchmark/zen_medium_*.json
+benchmark/fidelity_report.json
+benchmark/train_*.jsonl
+leaderboard.json
+corpus/lean_proved.jsonl
+# Scratch outputs written to CWD by tools
+agent-calls.jsonl
+synth.jsonl
+index.jsonl
+lean_proved.jsonl
