@@ -1,0 +1,5 @@
+id = """choose_mul_factorial"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_choose_mul_factorial (n k : ℕ) : k ≤ n → Nat.choose n k * Nat.factorial k * Nat.factorial (n - k) = Nat.factorial n := by
+  sorry"""

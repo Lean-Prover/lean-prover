@@ -1,0 +1,5 @@
+id = """mod_add_div"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_mod_add_div (a b : ℕ) : a % b + b * (a / b) = a := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """dvd_add"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_dvd_add (a b c : ℕ) : a ∣ b → a ∣ c → a ∣ b + c := by
+  sorry"""

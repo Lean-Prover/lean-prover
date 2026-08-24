@@ -26,6 +26,9 @@ from .mcp import serve as mcp_serve
 
 def _handle_frame(req: dict) -> dict:
     """Route one native RPC frame; returns the response dict."""
+    if not isinstance(req, dict):
+        return {"id": None, "success": False,
+                "error": "frame must be a JSON object"}
     rid = req.get("id")
     ftype = req.get("type", "")
 

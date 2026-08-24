@@ -1,0 +1,5 @@
+id = """even_or_odd"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_even_or_odd (n : ℕ) : Even n ∨ Odd n := by
+  sorry"""

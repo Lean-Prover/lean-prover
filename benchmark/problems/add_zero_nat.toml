@@ -1,0 +1,5 @@
+id = """add_zero_nat"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_add_zero_nat (a : ℕ) : a + 0 = a := by
+  sorry"""

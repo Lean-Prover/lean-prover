@@ -1,0 +1,5 @@
+id = """le_sqrt"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_le_sqrt (m n : ℕ) : n * n ≤ m → n ≤ Nat.sqrt m := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """dvd_seven_pow8_sub_1"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_dvd_seven_pow8_sub_1 (n : ℕ) : 7 ∣ 8 ^ n - 1 := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """add_comm_nat"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_add_comm_nat (a b : ℕ) : a + b = b + a := by
+  sorry"""

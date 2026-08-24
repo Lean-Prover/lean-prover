@@ -1,0 +1,5 @@
+id = """choose_self"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_choose_self (n : ℕ) : Nat.choose n n = 1 := by
+  sorry"""

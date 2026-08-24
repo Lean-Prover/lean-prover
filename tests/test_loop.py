@@ -7,6 +7,7 @@ call — the gap the e2e resume tests only brush indirectly.
 
 from __future__ import annotations
 
+import itertools
 from pathlib import Path
 
 import pytest
@@ -80,7 +81,7 @@ def test_native_hammer_solves_without_llm(hermetic, monkeypatch) -> None:
     assert "hammer" in names
     assert "llm_start" not in names
     assert "prover_finish" in r.proof
-    file_text = (hermetic / "tmp" / "Prover_hammer-solve.lean").read_text()
+    file_text = (hermetic / "lean" / "tmp" / "Prover_hammer-solve.lean").read_text()
     assert "prover_finish" in file_text
 
 
@@ -139,7 +140,7 @@ def test_prover_search_prepass_closes_without_llm(hermetic, monkeypatch) -> None
     assert hammers[0]["tactic"] == "prover_search 3"
     assert hammers[0]["ok"] is True
     assert "prover_search" in r.proof
-    file_text = (hermetic / "tmp" / "Prover_search-solve.lean").read_text()
+    file_text = (hermetic / "lean" / "tmp" / "Prover_search-solve.lean").read_text()
     assert "set_option maxHeartbeats 0" in file_text
     assert "prover_search" in file_text
 
@@ -198,6 +199,35 @@ def test_llm_error_is_emitted_and_logged(hermetic, monkeypatch,
     assert log.exists()
     assert '"kind": "llm_error"' in log.read_text()
     assert "429" in log.read_text()
+
+
+def test_failed_extraction_keeps_assistant_turn(hermetic, monkeypatch) -> None:
+    """A reply whose body extraction fails must still append the assistant
+    turn: dropping it puts two user messages back-to-back (strict
+    OpenAI-compatible backends reject that) and breaks compaction pairing."""
+    install_check(monkeypatch, ok_on=None)
+    histories: list[list[dict]] = []
+
+    def chat(system, messages, temperature=0.2, retries=4, model_name=None):
+        histories.append([dict(m) for m in messages])
+        # Only a restated theorem inside the block → _extract_body() == ""
+        return llm.LLMResponse(
+            content="```lean\ntheorem t : True := by trivial\n```",
+            prompt_tokens=1, completion_tokens=1, total_tokens=2)
+
+    monkeypatch.setattr(loop.llm, "chat", chat)
+    r = loop.prove(STATEMENT, max_steps=2, verbose=False,
+                   problem_id="alternation", goal_feedback=False,
+                   record_session=False, skip_hammers=True)
+    assert not r.proved
+    assert len(histories) == 2
+    for msgs in histories:
+        roles = [m["role"] for m in msgs]
+        for a, b in itertools.pairwise(roles):
+            assert not (a == "user" and b == "user")
+    # Step 2 saw the model's own (rejected) reply before its new user turn.
+    assert histories[1][-2]["role"] == "assistant"
+    assert histories[1][-1]["role"] == "user"
 
 
 def test_exhausts_max_steps(hermetic, monkeypatch) -> None:
@@ -578,7 +608,7 @@ def test_lemma_plan_prepends_proven_helpers(hermetic, monkeypatch) -> None:
     assert "plan_lemmas" in events
     assert r.trace[events.index("plan_lemmas")]["proven"] == [lemma_decl[:80]]
     # the helper lemma is in the file above the main theorem
-    f = hermetic / "tmp" / "Prover_planned.lean"
+    f = hermetic / "lean" / "tmp" / "Prover_planned.lean"
     text = f.read_text()
     assert "theorem prover_plan_1 (a b : ℕ) : a + b = b + a := by" in text
     assert text.index("prover_plan_1") < text.index("prover_loop")
@@ -683,7 +713,7 @@ theorem prover_full (a b : ℕ) : a + b = b + a := by
                    skip_hammers=True, full_file=True)
     assert r.proved
     assert r.steps == 2
-    text = (hermetic / "tmp" / "Prover_full.lean").read_text()
+    text = (hermetic / "lean" / "tmp" / "Prover_full.lean").read_text()
     assert "lemma helper (a : ℕ) : a + 0 = a := by" in text
     assert "theorem prover_full (a b : ℕ) : a + b = b + a := by" in text
     assert "  rw [add_comm]" in text

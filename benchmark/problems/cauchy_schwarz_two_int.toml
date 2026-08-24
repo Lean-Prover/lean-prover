@@ -1,0 +1,5 @@
+id = """cauchy_schwarz_two_int"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_cauchy_schwarz_two_int (a b c d : ℤ) : (a * c + b * d) ^ 2 ≤ (a ^ 2 + b ^ 2) * (c ^ 2 + d ^ 2) := by
+  sorry"""

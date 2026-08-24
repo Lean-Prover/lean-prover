@@ -1,0 +1,5 @@
+id = """sq_nonneg_int"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_sq_nonneg_int (x : ℤ) : 0 ≤ x ^ 2 := by
+  sorry"""

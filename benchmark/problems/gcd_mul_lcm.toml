@@ -1,0 +1,5 @@
+id = """gcd_mul_lcm"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_gcd_mul_lcm (a b : ℕ) : Nat.gcd a b * Nat.lcm a b = a * b := by
+  sorry"""

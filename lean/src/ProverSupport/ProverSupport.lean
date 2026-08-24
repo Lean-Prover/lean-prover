@@ -23,10 +23,12 @@ namespace ProverSupport
 
 open Lean Elab Tactic Meta
 
-/-- The hammer chain, in order of preference (`grind` first on Lean ≥4.33). -/
+/-- The hammer chain, in order of preference (`grind` first on Lean ≥4.33).
+`bv_decide` sits last-but-one: strong on Bool/BitVec goals, near-instant
+rejection elsewhere. `trivial` mops up degenerate goals. -/
 def hammerNames : List String :=
   ["grind", "simp", "ring", "omega", "linarith", "nlinarith", "norm_num",
-   "decide", "tauto", "aesop", "positivity"]
+   "decide", "tauto", "aesop", "positivity", "bv_decide", "trivial"]
 
 /-- Try one hammer; goals are untouched when it fails or is unknown. -/
 def tryHammer (name : String) : TacticM Unit := do

@@ -1,0 +1,5 @@
+id = """factorial_pos"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_factorial_pos (n : ℕ) : 0 < Nat.factorial n := by
+  sorry"""

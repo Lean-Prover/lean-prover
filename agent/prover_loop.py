@@ -31,6 +31,11 @@ from .session_manager import SessionManager, SessionRecord, history_from_records
 
 LEAN_DIR = Path(__file__).resolve().parent.parent / "lean"
 
+
+def _resolve_lean_dir() -> Path:
+    """Workspace override for hermetic runs/tests (PROVER_LEAN_DIR)."""
+    return Path(os.environ["PROVER_LEAN_DIR"]) if os.environ.get("PROVER_LEAN_DIR") else LEAN_DIR
+
 # Prepended to every agent-written file so tactics/theorems are in scope.
 HEADER = "import Mathlib\nimport ProverSupport\n\nopen BigOperators Nat Finset\n\n"
 
@@ -50,6 +55,8 @@ HAMMERS = [
     "aesop",
     "tauto",
     "positivity",
+    "bv_decide",
+    "trivial",
 ]
 
 SYSTEM = """You are an expert Lean 4 theorem prover.
@@ -60,10 +67,21 @@ indented two spaces, in a single ```lean code block. Rules:
 - Do NOT restate, rename, or change the theorem. Only write the proof body.
 - Do NOT include the theorem signature in your reply, only the tactics.
 - Prefer hammers first: `ring`, `omega`, `linarith`, `nlinarith`, `simp`,
-  `norm_num`, `positivity`, `aesop`. Only write manual induction/case
-  analysis if hammers cannot close the goal.
+  `norm_num`, `positivity`, `aesop`, `bv_decide` (Bool/BitVec goals). Only
+  write manual induction/case analysis if hammers cannot close the goal.
 - Use only core Lean 4 / Mathlib tactics available in the project.
 - If OPEN GOALS are shown, your proof must close every one.
+- If several goals remain, close the hardest one first.
+- Fix diagnostics in priority order: syntax errors first, then type errors,
+  then unsolved goals. Ignore linter warnings unless they block the build.
+- Never resubmit a proof you already tried: if a tactic failed once it will
+  fail again unchanged. Change something — a different hammer (`simp`,
+  `aesop`, `norm_num`), an explicit `induction`, or a helper `have`.
+- If the goal is universally quantified over ℕ or ℤ and algebraic tactics
+  keep failing, use `induction n` with explicit `simp [Nat.succ_mul]`-style
+  arithmetic rewriting.
+- Prefer compact proofs: combine chained rewrites (`rw [a, b]`, not one
+  `rw` per lemma) and drop redundant steps.
 - No `sorry`. The proof must fully type-check.
 - If diagnostics are shown, fix exactly those errors."""
 
@@ -81,6 +99,11 @@ contained Lean file that proves the theorem. Rules:
   `import` lines you need ABOVE the theorem to make the proof work.
 - Do NOT change the theorem's statement or binders in any way.
 - Use only core Lean 4 / Mathlib definitions.
+- Fix diagnostics in priority order: syntax errors first, then type errors,
+  then unsolved goals. Ignore linter warnings unless they block the build.
+- Never resubmit a proof you already tried: change something — a different
+  tactic, an `induction`, or a helper lemma — instead of repeating a failure.
+- Prefer compact proofs: combine chained rewrites and drop redundant steps.
 - If diagnostics are shown, fix exactly those errors in the file.
 - Output the whole file every time (not a diff)."""
 
@@ -108,14 +131,15 @@ class Result:
     attempts: list[Result] = field(default_factory=list)
 
 
-def _get_lean_file(problem_id: str | None = None) -> Path:
+def _get_lean_file(problem_id: str | None = None, lean_dir: Path | None = None) -> Path:
     """Get a unique Lean file for this problem. Uses lean/tmp/ for isolation."""
+    root = lean_dir if lean_dir is not None else _resolve_lean_dir()
     if problem_id:
-        tmp_dir = LEAN_DIR / "tmp"
-        tmp_dir.mkdir(exist_ok=True)
+        tmp_dir = root / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
         return tmp_dir / f"Prover_{problem_id}.lean"
     # Fallback to original single file (for `prove` command)
-    return LEAN_DIR / "src" / "Prover.lean"
+    return root / "src" / "Prover.lean"
 
 
 def _split_signature(statement: str) -> str:
@@ -239,6 +263,7 @@ def prove(
     adaptive_steps: bool = False,
 ) -> Result:
     t0 = time.time()
+    lean_dir = _resolve_lean_dir()
     signature = _split_signature(statement)
     history: list[dict] = []
     trace: list[dict] = []
@@ -269,7 +294,7 @@ def prove(
     diag = ProofCallDiagnosticLogger.from_paths()
     diag_context = ProofCallDiagnosticContext(
         model=active_model,
-        cwd=LEAN_DIR,
+        cwd=lean_dir,
         session_id=session.id,
         run_id=new_proof_call_run_id(),
         problem_id=problem_id,
@@ -290,7 +315,7 @@ def prove(
     def stop_requested() -> bool:
         return bool(should_stop and should_stop())
 
-    target_file = _get_lean_file(problem_id)
+    target_file = _get_lean_file(problem_id, lean_dir)
 
     # Lemma-bank: proven helper lemmas prepended above the main theorem.
     lemma_bank = ""
@@ -307,11 +332,12 @@ def prove(
     def write_file(b: str) -> None:
         nonlocal content
         content = b
+        target_file.parent.mkdir(parents=True, exist_ok=True)
         target_file.write_text(HEADER + lemma_bank + b + "\n")
 
     def check_file() -> tuple[bool, str]:
         """Run `lean --check` on the target file for fast, isolated verification."""
-        return lean.check_file(target_file, LEAN_DIR)
+        return lean.check_file(target_file, lean_dir)
 
     # LSP session for goal-state feedback (lazily started, may stay None).
     lsp_client: lsp.LeanLSP | None = None
@@ -322,7 +348,7 @@ def prove(
         if not goal_feedback:
             return None
         if lsp_client is None:
-            lsp_client = lsp.LeanLSP(LEAN_DIR, target_file)
+            lsp_client = lsp.LeanLSP(lean_dir, target_file)
         try:
             current_text = HEADER + lemma_bank + content
             lsp_client.update(current_text)
@@ -344,7 +370,7 @@ def prove(
             try:
                 from .retrieval import corpus_append
 
-                corpus_append(LEAN_DIR, statement, proof)
+                corpus_append(lean_dir, statement, proof)
             except Exception:  # noqa: BLE001, S110 — corpus growth is best-effort
                 pass
         emit(
@@ -554,6 +580,7 @@ def prove(
     base_max_steps = max_steps
     extensions = 0
     prev_progress = (10**9, 10**9)  # (ndiag, ngoals) of the previous step
+    tried_bodies: set[str] = set()  # exact proof bodies already submitted
     step = 0
     try:
         while step < max_steps:
@@ -568,7 +595,7 @@ def prove(
                 return finish(True, step, target_file.read_text(),
                               llm.estimate_cost(total_prompt, total_completion))
 
-            report = lean.error_report(LEAN_DIR, output)
+            report = lean.error_report(lean_dir, output)
             emit("build", step=step, ok=False, diagnostics=ndiag,
                  summary=(diags[0].message if diags else "sorry / not proved"),
                  report=report[:4000])
@@ -633,6 +660,7 @@ def prove(
                 )
                 history.append({"role": "assistant", "content": "(no response)"})
                 continue
+            rejected_dup = False
             if full_file:
                 new_content = _extract_full_file(resp.content, signature)
                 if new_content is None:
@@ -642,31 +670,50 @@ def prove(
                         f"```lean block that declares `theorem {name}` with the "
                         "given signature (write the whole file, do not rename it)."
                     )
-                    emit("llm_response", step=step, accepted=False,
-                         prompt_tokens=resp.prompt_tokens,
-                         completion_tokens=resp.completion_tokens,
-                         tokens=resp.total_tokens, body="")
-                    history.append({"role": "assistant", "content": resp.content})
-                    total_prompt += resp.prompt_tokens
-                    total_completion += resp.completion_tokens
-                    total_tokens += resp.total_tokens
-                    continue
-                write_file(new_content)
+                elif new_content in tried_bodies:
+                    # Duplicate of an already-tried file → same build result.
+                    rejected_dup = True
+                    extract_note = (
+                        "Your reply duplicates a file you already submitted; "
+                        "it will produce the same diagnostics. Change your "
+                        "approach: different tactic, `induction`, helper lemma."
+                    )
+                else:
+                    tried_bodies.add(new_content)
+                    write_file(new_content)
                 history.append({"role": "assistant", "content": resp.content})
             else:
                 new_body = _extract_body(resp.content)
                 if new_body:
-                    body = new_body
-                    write_file(signature + "\n" + body)
-                    history.append({"role": "assistant", "content": resp.content})
+                    if new_body in tried_bodies:
+                        # Same body → same diagnostics. Don't waste a build;
+                        # bounce it back with an explicit variation demand.
+                        rejected_dup = True
+                        extract_note = (
+                            "Your reply duplicates a proof you already "
+                            "submitted; it produced exactly the diagnostics "
+                            "shown above and will fail identically. Change "
+                            "your approach: different tactic, `induction`, "
+                            "a helper `have`, or a hammer (`simp`, `aesop`)."
+                        )
+                    else:
+                        tried_bodies.add(new_body)
+                        body = new_body
+                        write_file(signature + "\n" + body)
+                # Always keep the turn, even when extraction failed: dropping
+                # it would put two user messages back-to-back in the history
+                # (strict backends reject that) and break compaction pairing.
+                history.append({"role": "assistant", "content": resp.content})
             total_prompt += resp.prompt_tokens
             total_completion += resp.completion_tokens
             total_tokens += resp.total_tokens
-            emit("llm_response", step=step, accepted=True,
+            payload_body = "" if rejected_dup else (new_content if full_file else new_body)
+            emit("llm_response", step=step,
+                 accepted=bool(payload_body),
                  prompt_tokens=resp.prompt_tokens,
                  completion_tokens=resp.completion_tokens,
                  tokens=resp.total_tokens,
-                 body=(new_content if full_file else new_body))
+                 body=payload_body)
             # Compaction beats truncation: fold old dead-end turns into a
             # summary so the model stops re-trying them (tau's memory model).
             n_msgs = len(history)

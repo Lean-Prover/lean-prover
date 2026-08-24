@@ -1,0 +1,5 @@
+id = """two_le_prime"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_two_le_prime (p : ℕ) : Nat.Prime p → 2 ≤ p := by
+  sorry"""

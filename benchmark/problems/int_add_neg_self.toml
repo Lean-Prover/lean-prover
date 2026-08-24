@@ -1,0 +1,5 @@
+id = """int_add_neg_self"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_int_add_neg_self (a : ℤ) : a + -a = 0 := by
+  sorry"""

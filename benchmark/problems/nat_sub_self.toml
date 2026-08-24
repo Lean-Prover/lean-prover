@@ -1,0 +1,5 @@
+id = """nat_sub_self"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_nat_sub_self (n : ℕ) : n - n = 0 := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """not_even_and_odd"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_not_even_and_odd (n : ℕ) : ¬(Even n ∧ Odd n) := by
+  sorry"""

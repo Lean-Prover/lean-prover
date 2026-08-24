@@ -1,0 +1,5 @@
+id = """not_not_self_eq"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_not_not_self_eq (a : ℕ) : ¬¬(a = a) := by
+  sorry"""

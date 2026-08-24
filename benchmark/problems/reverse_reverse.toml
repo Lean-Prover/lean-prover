@@ -1,0 +1,5 @@
+id = """reverse_reverse"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_reverse_reverse {α : Type _} (xs : List α) : xs.reverse.reverse = xs := by
+  sorry"""

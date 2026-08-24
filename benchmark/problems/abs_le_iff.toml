@@ -1,0 +1,5 @@
+id = """abs_le_iff"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_abs_le_iff (a b : ℤ) : |a| ≤ b ↔ -b ≤ a ∧ a ≤ b := by
+  sorry"""

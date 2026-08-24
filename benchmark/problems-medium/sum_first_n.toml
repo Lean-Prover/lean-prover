@@ -1,0 +1,5 @@
+id = """sum_first_n"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_sum_first_n (n : ℕ) : 2 * (∑ i ∈ range (n + 1), i) = n * (n + 1) := by
+  sorry"""

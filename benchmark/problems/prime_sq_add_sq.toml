@@ -1,0 +1,5 @@
+id = """prime_sq_add_sq"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_prime_sq_add_sq (p : ℕ) : Nat.Prime p → p % 4 = 1 → ∃ a b : ℕ, p = a ^ 2 + b ^ 2 := by
+  sorry"""

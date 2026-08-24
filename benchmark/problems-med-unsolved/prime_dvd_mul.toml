@@ -1,0 +1,5 @@
+id = """prime_dvd_mul"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_prime_dvd_mul (p a b : ℕ) : Nat.Prime p → p ∣ a * b → p ∣ a ∨ p ∣ b := by
+  sorry"""

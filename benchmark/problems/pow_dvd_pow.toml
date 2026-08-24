@@ -1,0 +1,5 @@
+id = """pow_dvd_pow"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_pow_dvd_pow (a b : ℕ) (n : ℕ) : a ∣ b → a ^ n ∣ b ^ n := by
+  sorry"""

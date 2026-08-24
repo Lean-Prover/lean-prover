@@ -1,0 +1,5 @@
+id = """sum_range_const"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_sum_range_const (n : ℕ) : (∑ i ∈ range n, 1) = n := by
+  sorry"""

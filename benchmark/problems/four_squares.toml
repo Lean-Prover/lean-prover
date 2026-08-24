@@ -1,0 +1,5 @@
+id = """four_squares"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_four_squares (n : ℕ) : ∃ a b c d : ℕ, n = a ^ 2 + b ^ 2 + c ^ 2 + d ^ 2 := by
+  sorry"""

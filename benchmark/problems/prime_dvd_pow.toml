@@ -1,0 +1,5 @@
+id = """prime_dvd_pow"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_prime_dvd_pow (p a : ℕ) (n : ℕ) : Nat.Prime p → p ∣ a ^ n → p ∣ a := by
+  sorry"""

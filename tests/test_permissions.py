@@ -16,8 +16,15 @@ def _store(tmp_path: Path) -> PermissionStore:
 def test_default_mode_is_ask(tmp_path) -> None:
     s = _store(tmp_path)
     assert s.mode == "ask"
-    # ask baseline denies by default (explicit rule can still allow)
-    assert s.check("prove_theorem") == "deny"
+    # Not persisted yet → the user never opted in; only explicit rules block.
+    assert s.enforced is False
+    assert s.check("prove_theorem") == "allow"
+    # Once persisted, the ask baseline denies by default (an explicit
+    # rule can still allow).
+    s.save()
+    s2 = PermissionStore(path=s.path)
+    assert s2.enforced is True
+    assert s2.check("prove_theorem") == "deny"
 
 
 def test_mode_validation(tmp_path) -> None:
@@ -32,17 +39,17 @@ def test_mode_validation(tmp_path) -> None:
 
 def test_rule_lookup_exact(tmp_path) -> None:
     s = _store(tmp_path)
-    s.mode = "ask"
     s.add_rule("prove_theorem", "", allow=True)
+    s.save()
     assert s.check("prove_theorem") == "allow"
-    # unrelated tool still defaults to deny under ask
+    # unrelated tool still defaults to deny under an enforced ask baseline
     assert s.check("other_tool") == "deny"
 
 
 def test_rule_with_pattern(tmp_path) -> None:
     s = _store(tmp_path)
-    s.mode = "ask"
     s.add_rule("prove_theorem", '"difficulty": "easy"', allow=True)
+    s.save()
     assert s.check("prove_theorem", '{"difficulty": "easy"}') == "allow"
     assert s.check("prove_theorem", '{"difficulty": "hard"}') == "deny"
 
@@ -90,7 +97,10 @@ def test_persist_roundtrip(tmp_path) -> None:
 def test_missing_store_is_fresh(tmp_path) -> None:
     s = _store(tmp_path)
     assert s.rules() == {}
-    assert s.check("x") == "deny"
+    # No permissions.json → not enforced: baseline modes are advisory and
+    # only explicit deny rules block (opt-in ACL).
+    assert s.enforced is False
+    assert s.check("x") == "allow"
 
 
 def test_requires_tool_name(tmp_path) -> None:
@@ -176,3 +186,117 @@ async def test_acl_before_tool_call_open_by_default(tmp_path) -> None:
     gate = acl_before_tool_call(store)
     blocked, _ = await gate(SimpleNamespace(name="anything", arguments={"x": 1}))
     assert blocked is False
+
+
+@pytest.mark.anyio
+async def test_acl_gate_enforces_ask_once_opted_in(tmp_path) -> None:
+    """A persisted store with mode=ask denies tools without an allow rule."""
+    from types import SimpleNamespace
+
+    from agent.permissions import PermissionStore, acl_before_tool_call
+
+    path = tmp_path / "permissions.json"
+    writer = PermissionStore(path=path)
+    writer.add_rule("safe_tool", "", allow=True)
+    writer.save()  # opts in; baseline mode stays "ask"
+
+    gate = acl_before_tool_call(PermissionStore(path=path))
+    blocked, reason = await gate(
+        SimpleNamespace(name="unlisted_tool", arguments={})
+    )
+    assert blocked is True and "permission denied" in reason
+    blocked, _ = await gate(SimpleNamespace(name="safe_tool", arguments={}))
+    assert blocked is False
+
+
+@pytest.mark.anyio
+async def test_acl_gate_picks_up_rules_written_mid_session(tmp_path) -> None:
+    """The gate re-reads the store, so a deny saved by another instance
+    (e.g. the TUI's /permissions remember deny) applies immediately."""
+
+    from types import SimpleNamespace
+
+    from agent.permissions import PermissionStore, acl_before_tool_call
+
+    path = tmp_path / "permissions.json"
+    gate_store = PermissionStore(path=path)
+    gate = acl_before_tool_call(gate_store)
+
+    call = SimpleNamespace(name="prove_theorem", arguments={"statement": "t"})
+    blocked, _ = await gate(call)
+    assert blocked is False  # nothing denied yet
+
+    # A second instance (TUI) persists a deny rule for this exact tool.
+    tui_store = PermissionStore(path=path)
+    tui_store.add_rule("prove_theorem", "", allow=False)
+    tui_store.save()
+
+    blocked, reason = await gate(call)
+    assert blocked is True
+    assert "prove_theorem" in reason
+
+
+# --------------------------------------------------------------------------- rpc/mcp frame hardening
+
+
+def test_rpc_handle_frame_rejects_non_dict() -> None:
+    from agent.rpc import _handle_frame
+
+    out = _handle_frame(["not", "an", "object"])
+    assert out["success"] is False
+    assert "object" in out["error"]
+    assert _handle_frame(42)["success"] is False
+
+
+def test_rpc_serve_survives_bad_frames() -> None:
+    """Valid-JSON non-dict lines get an error response, not a dead server."""
+    import io
+
+    from agent.rpc import serve_rpc
+
+    stdin = io.StringIO('{"type":"get_state","id":1}\n[1,2]\n"hi"\n')
+    stdout = io.StringIO()
+    rc = serve_rpc(stdin=stdin, stdout=stdout)
+    assert rc == 0
+    lines = [__import__("json").loads(l) for l in stdout.getvalue().splitlines()]
+    assert len(lines) == 3
+    assert lines[0]["success"] is True and lines[0]["id"] == 1
+    assert all(l["success"] is False for l in lines[1:])
+
+
+def test_mcp_read_message_distinguishes_eof_from_malformed() -> None:
+    import io
+
+    from agent.mcp import _MALFORMED, _read_message
+
+    assert _read_message(io.StringIO("")) is None  # EOF
+    bad = io.StringIO()
+    bad.write("{not json]\n")
+    bad.seek(0)
+    assert _read_message(bad) is _MALFORMED
+    arr = io.StringIO("[1,2]\n")
+    assert _read_message(arr) is _MALFORMED  # valid JSON, wrong shape
+    empty_line = io.StringIO("\n")
+    assert _read_message(empty_line) is _MALFORMED
+
+
+def test_mcp_server_serves_after_malformed_line() -> None:
+    """One bad frame must not kill the session: error reply, then ping works."""
+    import io
+    import json as _json
+
+    from agent import mcp
+
+    stdin = io.StringIO("garbage\n" + _json.dumps({
+        "jsonrpc": "2.0", "id": 2, "method": "ping"}) + "\n")
+    stdout = io.StringIO()
+    orig_stdin, orig_stdout = mcp.sys.stdin, mcp.sys.stdout
+    mcp.sys.stdin, mcp.sys.stdout = stdin, stdout
+    try:
+        assert mcp.serve() == 0  # stdin exhausted → clean exit
+    finally:
+        mcp.sys.stdin, mcp.sys.stdout = orig_stdin, orig_stdout
+    lines = [_json.loads(l) for l in stdout.getvalue().splitlines()]
+    assert len(lines) == 2
+    assert lines[0]["error"]["code"] == -32700
+    assert lines[1] == {"jsonrpc": "2.0", "id": 2, "result": {}}

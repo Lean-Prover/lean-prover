@@ -1,0 +1,5 @@
+id = """min_add_max"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_min_add_max (a b : ℕ) : min a b + max a b = a + b := by
+  sorry"""

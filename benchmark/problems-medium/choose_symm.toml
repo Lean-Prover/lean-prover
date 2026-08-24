@@ -1,0 +1,5 @@
+id = """choose_symm"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_choose_symm (n k : ℕ) : k ≤ n → Nat.choose n k = Nat.choose n (n - k) := by
+  sorry"""

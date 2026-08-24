@@ -1,0 +1,5 @@
+id = """odd_mul_odd"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_odd_mul_odd (a b : ℕ) : Odd a → Odd b → Odd (a * b) := by
+  sorry"""

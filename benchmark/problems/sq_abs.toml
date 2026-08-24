@@ -1,0 +1,5 @@
+id = """sq_abs"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_sq_abs (a : ℤ) : |a| ^ 2 = a ^ 2 := by
+  sorry"""

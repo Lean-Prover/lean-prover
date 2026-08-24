@@ -1,0 +1,5 @@
+id = """sum_choose_eq_two_pow"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_sum_choose_eq_two_pow (n : ℕ) : (∑ k ∈ range (n + 1), Nat.choose n k) = 2 ^ n := by
+  sorry"""

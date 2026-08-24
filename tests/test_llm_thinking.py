@@ -46,7 +46,7 @@ class _FakeClient:
 def fake_client(monkeypatch):
     client = _FakeClient()
 
-    def _client():
+    def _client(model_name=None):
         return client
 
     monkeypatch.setattr(llm, "client", _client)
@@ -111,7 +111,7 @@ class _FakeModelClient:
 def test_available_models_lists_served_ids(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_BASE_URL", "http://localhost:1/v1")
     client = _FakeModelClient(["Qwen/Qwen3.8-27B"])
-    monkeypatch.setattr(llm, "client", lambda: client)
+    monkeypatch.setattr(llm, "client", lambda model_name=None: client)
     assert llm.available_models() == ["Qwen/Qwen3.8-27B"]
 
 

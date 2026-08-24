@@ -1,0 +1,5 @@
+id = """exists_prime_dvd"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_exists_prime_dvd (n : ℕ) : 2 ≤ n → ∃ p, Nat.Prime p ∧ p ∣ n := by
+  sorry"""

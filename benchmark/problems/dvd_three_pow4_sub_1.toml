@@ -1,0 +1,5 @@
+id = """dvd_three_pow4_sub_1"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_dvd_three_pow4_sub_1 (n : ℕ) : 3 ∣ 4 ^ n - 1 := by
+  sorry"""

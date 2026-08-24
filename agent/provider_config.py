@@ -183,7 +183,13 @@ def save_provider_settings(providers: list[ProviderConfig]) -> Path | None:
     body = json.dumps({"providers": [p.to_dict() for p in providers]}, indent=2)
     try:
         if path.exists():
-            shutil.copyfile(path, path.with_suffix(".json.bak"))
+            bak = path.with_suffix(".json.bak")
+            shutil.copyfile(path, bak)
+            # copyfile does not carry permissions; the backup holds api_key.
+            try:
+                os.chmod(bak, 0o600)
+            except OSError:
+                bak.unlink(missing_ok=True)
         fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".providers-", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as file:

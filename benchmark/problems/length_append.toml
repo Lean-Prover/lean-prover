@@ -1,0 +1,5 @@
+id = """length_append"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_length_append {α : Type _} (xs ys : List α) : (xs ++ ys).length = xs.length + ys.length := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """factorial_dvd_factorial"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_factorial_dvd_factorial (m n : ℕ) : m ≤ n → Nat.factorial m ∣ Nat.factorial n := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """bernoulli_nat"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_bernoulli_nat (x n : ℕ) : 1 + n * x ≤ (1 + x) ^ n := by
+  sorry"""

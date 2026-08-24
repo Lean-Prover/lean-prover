@@ -1,0 +1,5 @@
+id = """nat_lt_succ"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_nat_lt_succ (n : ℕ) : n < n + 1 := by
+  sorry"""

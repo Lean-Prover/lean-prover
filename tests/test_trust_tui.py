@@ -82,6 +82,38 @@ def test_trust_modal_select_triggers_choice(tmp_path) -> None:
     asyncio.run(scenario())
 
 
+def test_trust_modal_option_selection_returns_choice_id(tmp_path) -> None:
+    """A real OptionList selection must dismiss with the choice id.
+
+    Regression: options were built without ids, so every selection hit
+    `dismiss(None)` — in ask mode trust could never be granted interactively.
+    """
+    async def scenario() -> None:
+        app = ProverApp()
+        async with app.run_test() as pilot:
+            screen = TrustScreen(_fake_request(tmp_path))
+            choice: list[object] = []
+
+            async def on_result(result: object | None) -> None:
+                choice.append(result)
+
+            app.push_screen(screen, on_result)
+            await pilot.pause()
+            options = screen.query_one("#trust-list", OptionList)
+            assert [o.id for o in options.options] == [
+                "trust-exact", "trust-parent", "trust-run",
+                "decline-exact", "decline-run",
+            ]
+            options.focus()
+            options.highlighted = 2
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert choice == ["trust-run"]
+
+    asyncio.run(scenario())
+
+
 def test_untrusted_project_blocks_problem_loading(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("PROVER_TRUST", "never")
     monkeypatch.setenv("PROVER_CONFIG_DIR", str(tmp_path))

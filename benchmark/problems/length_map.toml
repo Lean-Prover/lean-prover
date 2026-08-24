@@ -1,0 +1,5 @@
+id = """length_map"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_length_map {α β : Type _} (xs : List α) (f : α → β) : (xs.map f).length = xs.length := by
+  sorry"""

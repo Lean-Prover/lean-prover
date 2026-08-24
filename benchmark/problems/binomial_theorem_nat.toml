@@ -1,0 +1,5 @@
+id = """binomial_theorem_nat"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_binomial_theorem_nat (a b : ℕ) (n : ℕ) : (a + b) ^ n = ∑ k ∈ range (n + 1), Nat.choose n k * a ^ k * b ^ (n - k) := by
+  sorry"""

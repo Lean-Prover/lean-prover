@@ -27,3 +27,14 @@ def _reset_allow_select():
 def _no_corpus_growth(monkeypatch):
     """Keep test-driven proofs from writing into the real repo corpus."""
     monkeypatch.setenv("PROVER_CORPUS_GROW", "0")
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_lean_dir(tmp_path, monkeypatch):
+    """Keep test-driven proofs from touching the real lean/ workspace.
+
+    prover_loop.LEAN_DIR is read once at import; tests that patch the module
+    attribute directly still win, but everything else (prove() without a
+    patched fixture) now writes into tmp instead of lean/src|tmp.
+    """
+    monkeypatch.setenv("PROVER_LEAN_DIR", str(tmp_path / "lean"))

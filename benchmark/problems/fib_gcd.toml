@@ -1,0 +1,5 @@
+id = """fib_gcd"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_fib_gcd (m n : ℕ) : Nat.gcd (Nat.fib m) (Nat.fib n) = Nat.fib (Nat.gcd m n) := by
+  sorry"""

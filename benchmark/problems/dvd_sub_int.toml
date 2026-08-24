@@ -1,0 +1,5 @@
+id = """dvd_sub_int"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_dvd_sub_int (a b c : ℤ) : a ∣ b → a ∣ c → a ∣ b - c := by
+  sorry"""

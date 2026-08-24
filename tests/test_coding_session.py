@@ -242,6 +242,22 @@ def test_provider_config_save_load_and_backup(tmp_path, monkeypatch) -> None:
     assert (tmp_path / "providers.json.bak").exists()
 
 
+def test_provider_config_backup_is_owner_only(tmp_path, monkeypatch) -> None:
+    """The .bak holds api_key material, so copyfile's default perms (0644)
+    must be tightened to 0600."""
+    import os
+
+    from agent import provider_config as pc
+
+    monkeypatch.setenv("PROVER_PROVIDERS_PATH", str(tmp_path / "providers.json"))
+    configs = [pc.ProviderConfig(name="local", base_url="http://x/v1",
+                                 env_key="K", api_key="sk-secret")]
+    assert pc.save_provider_settings(configs) is not None
+    assert pc.save_provider_settings(configs) is not None
+    mode = os.stat(tmp_path / "providers.json.bak").st_mode & 0o777
+    assert mode == 0o600, f"backup is world-readable: {oct(mode)}"
+
+
 def test_provider_config_legacy_models_migration(tmp_path, monkeypatch) -> None:
     from agent import provider_config as pc
 

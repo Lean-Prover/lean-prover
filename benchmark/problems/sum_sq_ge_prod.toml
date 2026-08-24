@@ -1,0 +1,5 @@
+id = """sum_sq_ge_prod"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_sum_sq_ge_prod (a b : ℤ) : 2 * a * b ≤ a ^ 2 + b ^ 2 := by
+  sorry"""

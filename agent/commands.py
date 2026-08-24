@@ -70,6 +70,7 @@ class CommandResult:
     export_requested: bool = False
     export_destination: Path | None = None
     usage_requested: bool = False
+    usage_session_id: str | None = None         # /usage [id|all] — None = current
     theme: str | None = None
     thinking_level: str | None = None
     new_session_requested: bool = False
@@ -541,6 +542,7 @@ def _tools_command(context: CommandContext) -> CommandResult:
 
 def _stats_command(context: CommandContext) -> CommandResult:
     return CommandResult(handled=True, usage_requested=True,
+                         usage_session_id=context.session.current_session_id,
                          message=f"Stats for {context.session.current_session_id or 'active session'}")
 
 
@@ -615,11 +617,14 @@ def _usage_command(context: CommandContext) -> CommandResult:
     if not context.args:
         current = context.session.current_session_id
         return CommandResult(
-            handled=True, usage_requested=True,
-            message=(f"Usage for {current}" if current
-                     else "Usage: /usage [session-id|all]"),
+            handled=True, usage_requested=True, usage_session_id=current,
+            message=("Usage: /usage [session-id|all]" if not current
+                     else f"Usage for {current}"),
         )
-    return CommandResult(handled=True, usage_requested=True, message=f"Usage for {context.args}")
+    arg = context.args.strip()
+    return CommandResult(handled=True, usage_requested=True,
+                         usage_session_id=arg,
+                         message=f"Usage for {arg}")
 
 
 def _status_command(context: CommandContext) -> CommandResult:

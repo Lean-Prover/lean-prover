@@ -1,0 +1,5 @@
+id = """dvd_antisymm"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_dvd_antisymm (a b : ℕ) : a ∣ b → b ∣ a → a = b := by
+  sorry"""

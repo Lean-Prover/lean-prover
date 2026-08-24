@@ -1,0 +1,5 @@
+id = """dvd_three_consecutive"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_dvd_three_consecutive (n : ℕ) : 3 ∣ n * (n + 1) * (n + 2) := by
+  sorry"""

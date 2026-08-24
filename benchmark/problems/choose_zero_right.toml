@@ -1,0 +1,5 @@
+id = """choose_zero_right"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_choose_zero_right (n : ℕ) : Nat.choose n 0 = 1 := by
+  sorry"""

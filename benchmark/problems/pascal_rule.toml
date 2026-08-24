@@ -1,0 +1,5 @@
+id = """pascal_rule"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_pascal_rule (n k : ℕ) : Nat.choose (n + 1) (k + 1) = Nat.choose n k + Nat.choose n (k + 1) := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """prop_or_self"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_prop_or_self (p : Prop) : p ∨ p ↔ p := by
+  sorry"""

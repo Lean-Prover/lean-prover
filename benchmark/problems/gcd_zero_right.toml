@@ -1,0 +1,5 @@
+id = """gcd_zero_right"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_gcd_zero_right (n : ℕ) : Nat.gcd n 0 = n := by
+  sorry"""

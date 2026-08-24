@@ -25,7 +25,6 @@ import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from urllib.request import Request, urlopen
 
 from ..credentials import FileCredentialStore, OAuthCredential
 from .types import OAuthPrompt
@@ -73,7 +72,13 @@ def _local_platform_server(expected_state: str, timeout: float = 300.0) -> Autho
         def log_message(self, *args: Any) -> None:
             pass
 
-    server = HTTPServer(("127.0.0.1", LOCAL_PORT), _Handler)
+    server = None
+    try:
+        server = HTTPServer(("127.0.0.1", LOCAL_PORT), _Handler)
+    except OSError:
+        # Port busy (another login, or the real Codex CLI): fail the flow
+        # instead of crashing the caller.
+        return None
     server.timeout = timeout
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -90,24 +95,34 @@ def _local_platform_server(expected_state: str, timeout: float = 300.0) -> Autho
 
 def _exchange_code(code: str, verifier: str, client_id: str) -> dict[str, Any] | None:
     """POST the token exchange form (PKCE verifier attached)."""
-    data = urllib.parse.urlencode(
-        {
+    from .http import OAuthHTTPError, post_form
+
+    try:
+        return post_form(f"{OPENAI_CODEX_AUTH_BASE_URL}/oauth/token", {
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": OPENAI_CODEX_REDIRECT_URI,
             "client_id": client_id,
             "code_verifier": verifier,
-        }
-    ).encode()
-    req = Request(f"{OPENAI_CODEX_AUTH_BASE_URL}/oauth/token", data=data, method="POST")
-    req.add_header("Content-Type", "application/x-www-form-urlencoded")
-    try:
-        with urlopen(req, timeout=30) as resp:
-            import json
-
-            return json.loads(resp.read().decode())
-    except Exception:  # noqa: BLE001
+        })
+    except OAuthHTTPError:
         return None
+
+
+def refresh_codex(refresh_token: str,
+                  client_id: str = OPENAI_CODEX_CLIENT_ID) -> dict | None:
+    """Exchange a Codex refresh token for a fresh token payload."""
+    from .http import OAuthHTTPError, post_form
+
+    try:
+        token = post_form(f"{OPENAI_CODEX_AUTH_BASE_URL}/oauth/token", {
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "refresh_token": refresh_token,
+        })
+    except OAuthHTTPError:
+        return None
+    return token if token.get("access_token") else None
 
 
 class AuthorizationFlow:
@@ -116,16 +131,23 @@ class AuthorizationFlow:
     def __init__(self, callback: Callable[[OAuthPrompt], Any] | None = None) -> None:
         self.callback = callback
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._opened_browser = False
 
     def _prompt(self, prompt: OAuthPrompt) -> None:
         if self.callback is not None:
             import inspect
 
             result = self.callback(prompt)
-            if inspect.isawaitable(result) and self._loop is not None:
-                asyncio.run_coroutine_threadsafe(result, self._loop).result(timeout=30)
-        elif prompt.url:
+            if inspect.isawaitable(result):
+                if self._loop is not None and self._loop.is_running():
+                    # Called from the loop's thread we'd deadlock on .result();
+                    # this flow is sync-driven, so only cross-thread dispatch.
+                    asyncio.run_coroutine_threadsafe(result, self._loop).result(timeout=30)
+                else:
+                    asyncio.run(result)  # type: ignore[arg-type]
+        elif prompt.url and not self._opened_browser:
             webbrowser.open(prompt.url)
+            self._opened_browser = True
 
 
 def login_openai_codex(
@@ -161,8 +183,6 @@ def login_openai_codex(
         f"&prompt=login"
     )
     flow._prompt(OAuthPrompt(kind="url", text="Open this URL to sign in", url=auth_url))
-    if prompt_callback is None:
-        webbrowser.open(auth_url)
     flow._prompt(OAuthPrompt(kind="wait", text="Waiting for sign-in to complete..."))
 
     auth = _local_platform_server(state, timeout=timeout)

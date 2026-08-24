@@ -1,0 +1,5 @@
+id = """factorial_lt_pow"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_factorial_lt_pow (n : ℕ) : 1 < n → Nat.factorial n < n ^ n := by
+  sorry"""

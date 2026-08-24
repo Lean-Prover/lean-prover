@@ -1,0 +1,5 @@
+id = """natAbs_mul"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_natAbs_mul (a b : ℤ) : Int.natAbs (a * b) = Int.natAbs a * Int.natAbs b := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """dvd_thirty_n5_sub_n"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_dvd_thirty_n5_sub_n (n : ℤ) : 30 ∣ n ^ 5 - n := by
+  sorry"""

@@ -7,14 +7,12 @@ the user-code prompt, and polls via ``poll_oauth_device_code``.
 
 from __future__ import annotations
 
-import json
-import urllib.parse
-import urllib.request
+import time
 from collections.abc import Callable
-from urllib.request import Request, urlopen
 
 from ..credentials import FileCredentialStore, OAuthCredential
 from .device import DeviceFlowError, parse_device_code_response, poll_oauth_device_code
+from .http import OAuthHTTPError, post_form
 from .types import OAuthPrompt
 
 ANTHROPIC_DEVICE_CODE_URL = "https://console.anthropic.com/oauth/device/code"
@@ -22,19 +20,26 @@ ANTHROPIC_TOKEN_URL = "https://console.anthropic.com/oauth/token"
 ANTHROPIC_CLIENT_ID = "claude.desktop"
 ANTHROPIC_SCOPE = "user:inference user:profile"
 
-import time
-
 
 def _post_json(url: str, fields: dict[str, str]) -> dict | None:
-    data = urllib.parse.urlencode(fields).encode()
-    req = Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/x-www-form-urlencoded")
-    req.add_header("Accept", "application/json")
     try:
-        with urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode())
-    except Exception:  # noqa: BLE001
+        return post_form(url, fields)
+    except OAuthHTTPError:
         return None
+
+
+def refresh_anthropic(refresh_token: str,
+                      client_id: str = ANTHROPIC_CLIENT_ID) -> dict | None:
+    """Exchange a refresh token for a fresh token payload (None on failure)."""
+    try:
+        token = post_form(ANTHROPIC_TOKEN_URL, {
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "refresh_token": refresh_token,
+        })
+    except OAuthHTTPError:
+        return None
+    return token if token.get("access_token") else None
 
 
 async def login_anthropic(

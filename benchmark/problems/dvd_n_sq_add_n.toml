@@ -1,0 +1,5 @@
+id = """dvd_n_sq_add_n"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_dvd_n_sq_add_n (n : ℕ) : 2 ∣ n ^ 2 + n := by
+  sorry"""

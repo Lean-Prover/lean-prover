@@ -7,7 +7,9 @@ process for the send/read plumbing).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -99,3 +101,79 @@ def test_run_tactic_returns_none_on_null_result(client: lsp.LeanLSP, monkeypatch
 
     monkeypatch.setattr(client, "_request", fake_request)
     assert client.run_tactic("theorem t : True := by sorry", "trivial") is None
+
+
+# ------------------------------------------------------------------ framing
+
+
+class _ShortReadPipe:
+    """Pipe stub whose read() returns at most `chunk` bytes per call,
+    mimicking kernel-level partial reads on a raw (bufsize=0) pipe."""
+
+    def __init__(self, data: bytes, chunk: int = 3) -> None:
+        self._buf = bytearray(data)
+        self._chunk = chunk
+
+    def readline(self) -> bytes:
+        i = self._buf.find(b"\n")
+        if i < 0:
+            out = bytes(self._buf)
+            self._buf.clear()
+            return out
+        out = bytes(self._buf[: i + 1])
+        del self._buf[: i + 1]
+        return out
+
+    def read(self, n: int) -> bytes:
+        n = min(n, self._chunk)
+        out = bytes(self._buf[:n])
+        del self._buf[:n]
+        return out
+
+
+def _frame(payload: dict) -> bytes:
+    body = json.dumps(payload).encode()
+    return b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+
+
+def test_read_msg_reassembles_short_pipe_reads(client: lsp.LeanLSP) -> None:
+    """A body delivered in several short reads must be reassembled before
+    JSON parsing (regression: single read(n) truncated mid-frame)."""
+    msg = {"jsonrpc": "2.0", "id": 7, "result": {"ok": True}}
+    client._proc = SimpleNamespace(stdout=_ShortReadPipe(_frame(msg)))
+    assert client._read_msg() == msg
+
+
+def test_read_msg_returns_none_on_eof_mid_body(client: lsp.LeanLSP) -> None:
+    payload = json.dumps({"jsonrpc": "2.0", "id": 7}).encode()
+    frame = b"Content-Length: " + str(len(payload)).encode() + b"\r\n\r\n" + payload[:5]
+    client._proc = SimpleNamespace(stdout=_ShortReadPipe(frame))
+    assert client._read_msg() is None
+
+
+# ------------------------------------------------------- server restart state
+
+
+def test_ensure_started_resets_opened_for_new_process(
+        client: lsp.LeanLSP, monkeypatch) -> None:
+    """After a respawn the new server never saw didOpen, so `_opened` must
+    reset (regression: stale flag permanently disabled goal feedback)."""
+    assert client._opened is True
+    # Restore the real method: the client fixture stubs `_ensure_started`.
+    monkeypatch.setattr(client, "_ensure_started",
+                        lsp.LeanLSP._ensure_started.__get__(client))
+    monkeypatch.setattr(client, "_request", lambda *a, **k: {"result": {}})
+    proc = SimpleNamespace(pid=4242, poll=lambda: None)
+    monkeypatch.setattr(lsp.subprocess, "Popen", lambda *a, **k: proc)
+    assert client._ensure_started() is True
+    assert client._opened is False
+
+
+def test_kill_clears_opened_flag(client: lsp.LeanLSP, monkeypatch) -> None:
+    """The timeout path kills the process group; `_opened` must not survive."""
+    client._opened = True
+    client._proc = SimpleNamespace(pid=123, poll=lambda: None)
+    monkeypatch.setattr(lsp.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(lsp.os, "killpg", lambda pgid, sig: None)
+    client._kill()
+    assert client._opened is False

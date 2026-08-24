@@ -1,0 +1,5 @@
+id = """even_add_even"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_even_add_even (a b : ℕ) : Even a → Even b → Even (a + b) := by
+  sorry"""

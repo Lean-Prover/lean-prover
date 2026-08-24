@@ -22,6 +22,13 @@ SEED_SESSION_ID = "20260101-000000-seed"
 STATEMENT = "theorem prover_seed (n : ℕ) : n + 0 = n := by\n  sorry"
 
 
+@pytest.fixture(autouse=True)
+def _real_lean_dir(monkeypatch):
+    """These are true end-to-end tests: the real lake/Mathlib workspace must
+    be used, so undo the conftest-wide PROVER_LEAN_DIR isolation."""
+    monkeypatch.delenv("PROVER_LEAN_DIR", raising=False)
+
+
 def _seed_session(sessions_dir: Path) -> None:
     """Write a one-step failed session + index record to seed a resume."""
     records = [

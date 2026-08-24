@@ -1,0 +1,5 @@
+id = """gcd_dvd_right"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_gcd_dvd_right (a b : ℕ) : Nat.gcd a b ∣ b := by
+  sorry"""

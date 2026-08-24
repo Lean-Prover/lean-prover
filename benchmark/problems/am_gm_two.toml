@@ -1,0 +1,5 @@
+id = """am_gm_two"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_am_gm_two (a b : ℕ) : 4 * a * b ≤ (a + b) ^ 2 := by
+  sorry"""

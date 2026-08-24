@@ -21,7 +21,12 @@ MAX_LISTED_ATTEMPTS = 10
 _ATTEMPT_RE = re.compile(r"```\w*\n(.*?)```", re.DOTALL)
 
 # Errors that are not worth listing (the sorry placeholder step).
-_NOISE_FIRST_ERRORS = ("declaration uses 'sorry'", "goals remain")
+# Lean quotes the marker differently across versions ('sorry' vs `sorry`).
+_NOISE_FIRST_ERRORS = (
+    "declaration uses 'sorry'",
+    "declaration uses `sorry`",
+    "goals remain",
+)
 
 
 def compact_history(

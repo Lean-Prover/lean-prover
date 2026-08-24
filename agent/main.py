@@ -99,9 +99,11 @@ def cmd_bench(args: argparse.Namespace) -> int:
     from pathlib import Path
 
     _warn_model_mismatch()
-    problems = json.loads(Path(args.problems).read_text())
+    from .problems import active_problems, load_problems
+
     start = args.start - 1  # 1-indexed for humans
-    problems = problems[start:]
+    problems = [p.as_dict() for p in
+                active_problems(load_problems(args.problems))[start:]]
     results = []
     total_tokens = 0
     total_cost = 0.0
@@ -382,6 +384,53 @@ def cmd_sessions(args: argparse.Namespace) -> int:
 BOARD_FILE = "leaderboard.json"
 
 
+def provenance(problems_path: str | None = None) -> dict:
+    """Run-provenance stamps for leaderboard/report entries (lean-eval style).
+
+    Pins the exact inputs so scores stay comparable across weeks:
+    - benchmark_commit: git SHA of this repo (None outside a checkout)
+    - toolchain: the lean/lean-toolchain pin
+    - problems_sha256: digest of the problem set actually run
+    """
+    from pathlib import Path as _Path
+
+    root = _Path(__file__).resolve().parent.parent
+    commit = None
+    try:
+        import subprocess
+
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=root,
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip() or None
+    except Exception:  # noqa: BLE001, S110 — provenance is best-effort
+        pass
+    toolchain = None
+    try:
+        toolchain = (root / "lean" / "lean-toolchain").read_text().strip() or None
+    except OSError:
+        pass
+    problems_sha256 = None
+    if problems_path:
+        try:
+            from .problems import dir_digest
+
+            problems_sha256 = dir_digest(problems_path)
+        except Exception:  # noqa: BLE001 — provenance is best-effort
+            from hashlib import sha256 as _sha
+
+            try:
+                problems_sha256 = _sha(
+                    _Path(problems_path).read_bytes()).hexdigest()
+            except OSError:
+                pass
+    return {
+        "benchmark_commit": commit,
+        "toolchain": toolchain,
+        "problems_sha256": problems_sha256,
+    }
+
+
 def cmd_login(args: argparse.Namespace) -> int:
     from . import cli
 
@@ -442,8 +491,9 @@ def cmd_leaderboard(args: argparse.Namespace) -> int:
     board = load_board()
     if not args.show and args.run:
         from .loop import prove
+        from .problems import active_problems, load_problems
 
-        problems = json.loads(Path(args.problems).read_text())
+        problems = [p.as_dict() for p in active_problems(load_problems(args.problems))]
         results = []
         for i, p in enumerate(problems, 1):
             print(f"[{i}/{len(problems)}] {p['id']}")
@@ -462,6 +512,7 @@ def cmd_leaderboard(args: argparse.Namespace) -> int:
             "tiers": by_tier,
             "max_steps": args.max_steps,
             "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            **provenance(args.problems),
         }
         board.append(entry)
         board.sort(key=lambda e: -e["score"])

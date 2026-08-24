@@ -1,0 +1,5 @@
+id = """card_range"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_card_range (n : ℕ) : (range n).card = n := by
+  sorry"""

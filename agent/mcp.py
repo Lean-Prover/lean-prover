@@ -224,17 +224,28 @@ def _handle_tool(name: str, args: dict) -> tuple[dict, bool]:
     return {"error": f"unknown tool: {name}"}, True
 
 
+_MALFORMED = object()  # sentinel: line was readable but not valid JSON
+
+
 def _read_message(stdin) -> dict | None:
+    """Next request dict, None on EOF, or _MALFORMED on a bad line.
+
+    Malformed input must not terminate the server (a client that sends one
+    bad frame should get an error response, not a dead session).
+    """
     line = stdin.readline()
     if not line:
         return None
     line = line.strip()
     if not line:
-        return None
+        return _MALFORMED
     try:
-        return json.loads(line)
+        msg = json.loads(line)
     except json.JSONDecodeError:
-        return None
+        return _MALFORMED
+    if not isinstance(msg, dict):
+        return _MALFORMED
+    return msg
 
 
 def _write_message(msg: dict) -> None:
@@ -265,6 +276,13 @@ def serve() -> int:
         msg = _read_message(stdin)
         if msg is None:
             return 0
+        if msg is _MALFORMED:
+            _write_message({
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": "parse error"},
+            })
+            continue
         method = msg.get("method")
         rid = msg.get("id")
         params = msg.get("params") or {}

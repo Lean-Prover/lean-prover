@@ -1,0 +1,5 @@
+id = """geom_sum_mul"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_geom_sum_mul (x : ℤ) (n : ℕ) : (x - 1) * (∑ i ∈ range n, x ^ i) = x ^ n - 1 := by
+  sorry"""

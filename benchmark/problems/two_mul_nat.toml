@@ -1,0 +1,5 @@
+id = """two_mul_nat"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_two_mul_nat (n : ℕ) : 2 * n = n + n := by
+  sorry"""

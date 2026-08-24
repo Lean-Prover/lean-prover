@@ -1,0 +1,5 @@
+id = """sum_odd_eq_sq"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_sum_odd_eq_sq (n : ℕ) : (∑ i ∈ range n, (2 * i + 1)) = n ^ 2 := by
+  sorry"""

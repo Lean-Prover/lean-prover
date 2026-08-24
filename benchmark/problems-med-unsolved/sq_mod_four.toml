@@ -1,0 +1,5 @@
+id = """sq_mod_four"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_sq_mod_four (n : ℕ) : n ^ 2 % 4 = 0 ∨ n ^ 2 % 4 = 1 := by
+  sorry"""

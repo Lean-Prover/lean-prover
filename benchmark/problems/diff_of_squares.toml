@@ -1,0 +1,5 @@
+id = """diff_of_squares"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_diff_of_squares (a b : ℤ) : a ^ 2 - b ^ 2 = (a - b) * (a + b) := by
+  sorry"""

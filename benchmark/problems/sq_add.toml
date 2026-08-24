@@ -1,0 +1,5 @@
+id = """sq_add"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_sq_add (a b : ℤ) : (a + b) ^ 2 = a ^ 2 + 2 * a * b + b ^ 2 := by
+  sorry"""

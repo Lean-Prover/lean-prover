@@ -30,6 +30,14 @@ pip install pytest              # to run the test suite
 export OPENAI_API_KEY=...          # or
 export OPENAI_BASE_URL=http://localhost:11434/v1  # e.g. Ollama
 export PROVER_MODEL=gpt-4o
+
+# Free option: OpenCode Zen (https://opencode.ai/docs/zen) — key from
+# https://opencode.ai/auth, free model ids include big-pickle,
+# x-preview-f-free, mimo-v2.5-free, hy3-free, nemotron-3-ultra-free,
+# nemotron-3.5-lightning-free, deepseek-v4-flash-free, laguna-s-2.1-free.
+export OPENAI_BASE_URL=https://opencode.ai/zen/v1
+export OPENAI_API_KEY=<zen-key>
+export PROVER_MODEL=big-pickle
 ```
 
 ### Environment variables

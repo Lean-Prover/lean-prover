@@ -1,0 +1,5 @@
+id = """prime_not_dvd_one"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_prime_not_dvd_one (p : ℕ) : Nat.Prime p → ¬ p ∣ 1 := by
+  sorry"""

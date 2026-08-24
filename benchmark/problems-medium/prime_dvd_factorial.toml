@@ -1,0 +1,5 @@
+id = """prime_dvd_factorial"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_prime_dvd_factorial (p n : ℕ) : Nat.Prime p → p ≤ n → p ∣ Nat.factorial n := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """cube_diff"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_cube_diff (a b : ℤ) : a ^ 3 - b ^ 3 = (a - b) * (a ^ 2 + a * b + b ^ 2) := by
+  sorry"""

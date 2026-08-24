@@ -1,0 +1,5 @@
+id = """lt_two_pow_self"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_lt_two_pow_self (n : ℕ) : n < 2 ^ n := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """two_mul_sum_range_id"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_two_mul_sum_range_id (n : ℕ) : 2 * (∑ i ∈ range n, i) = n * (n - 1) := by
+  sorry"""

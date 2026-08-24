@@ -1,0 +1,5 @@
+id = """even_mul_iff"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_even_mul_iff (a b : ℕ) : Even (a * b) ↔ Even a ∨ Even b := by
+  sorry"""

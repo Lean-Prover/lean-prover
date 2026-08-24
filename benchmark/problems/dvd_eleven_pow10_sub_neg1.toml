@@ -1,0 +1,5 @@
+id = """dvd_eleven_pow10_sub_neg1"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_dvd_eleven_pow10_sub_neg1 (n : ℕ) : (11 : ℤ) ∣ (10 : ℤ) ^ n - (-1 : ℤ) ^ n := by
+  sorry"""

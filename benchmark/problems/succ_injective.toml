@@ -1,0 +1,5 @@
+id = """succ_injective"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_succ_injective (a b : ℕ) : Nat.succ a = Nat.succ b → a = b := by
+  sorry"""

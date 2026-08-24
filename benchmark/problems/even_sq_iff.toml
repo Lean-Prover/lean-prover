@@ -1,0 +1,5 @@
+id = """even_sq_iff"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_even_sq_iff (n : ℕ) : Even (n ^ 2) ↔ Even n := by
+  sorry"""

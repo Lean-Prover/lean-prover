@@ -1,0 +1,5 @@
+id = """sum_cubes_eq_sq_sum"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_sum_cubes_eq_sq_sum (n : ℕ) : (∑ i ∈ range (n + 1), i) ^ 2 = ∑ i ∈ range (n + 1), i ^ 3 := by
+  sorry"""

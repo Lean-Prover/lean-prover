@@ -1,0 +1,5 @@
+id = """fib_add"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_fib_add (m n : ℕ) : Nat.fib (m + n + 1) = Nat.fib m * Nat.fib n + Nat.fib (m + 1) * Nat.fib (n + 1) := by
+  sorry"""

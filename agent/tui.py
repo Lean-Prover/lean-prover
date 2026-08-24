@@ -689,7 +689,8 @@ class TrustScreen(ModalScreen[str | None]):
                 f"protected: {counts}\n"
                 "[dim]project trust is an input-loading guard, not a sandbox[/dim]\n"
             )
-            yield OptionList(*[Option(c) for c in self.CHOICES], id="trust-list")
+            yield OptionList(*[Option(c, id=c) for c in self.CHOICES],
+                             id="trust-list")
             yield Static("↑/↓ select · Enter decide · esc cancel",
                          classes="hint")
 
@@ -1539,7 +1540,9 @@ class ProverApp(App):
         if result.export_requested and result.export_destination:
             self._export_log(result.export_destination)
         if result.usage_requested:
-            self._show_usage(result.message)
+            if result.message:
+                self._log(f"[dim]{result.message}[/dim]")
+            self._show_usage(result.usage_session_id)
         if result.new_session_requested:
             self._new_session()
         if result.compact_summary is not None:
@@ -1833,10 +1836,13 @@ class ProverApp(App):
 
                 summary = summarize_branch_with_model(records)
                 if summary:
-                    self._log("[dim]branch summary generated[/dim]")
+                    self.call_from_thread(
+                        self._log, "[dim]branch summary generated[/dim]")
                 else:
-                    self._log("[dim]branch summary unavailable — continuing with "
-                              "recorded history only[/dim]")
+                    self.call_from_thread(
+                        self._log,
+                        "[dim]branch summary unavailable — continuing with "
+                        "recorded history only[/dim]")
             result = prove(
                 statement, max_steps=20, verbose=False,
                 problem_id=pid, goal_feedback=True,
@@ -2113,11 +2119,17 @@ class ProverApp(App):
         self._drain_queued_prompts()
 
     def _drain_queued_prompts(self) -> None:
-        """Prove prompts queued while a run was active (tau's queued follow-ups)."""
-        while self._queued_prompts:
-            text = self._queued_prompts.pop(0)
-            self._log(f"[dim]applying queued:[/dim] {text[:60]}")
-            self._prove_statement(text)
+        """Prove prompts queued while a run was active (tau's queued follow-ups).
+
+        Starts exactly one: when it finishes, _run_done re-enters here, so
+        queued prompts prove sequentially instead of racing on the shared
+        #proof/#goals panels.
+        """
+        if not self._queued_prompts:
+            return
+        text = self._queued_prompts.pop(0)
+        self._log(f"[dim]applying queued:[/dim] {text[:60]}")
+        self._prove_statement(text)
 
     # ---------------------------------------------------------------- diff
 

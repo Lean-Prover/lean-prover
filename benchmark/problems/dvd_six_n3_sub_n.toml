@@ -1,0 +1,5 @@
+id = """dvd_six_n3_sub_n"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_dvd_six_n3_sub_n (n : ℤ) : 6 ∣ n ^ 3 - n := by
+  sorry"""

@@ -22,16 +22,27 @@ _clients: dict[tuple[str | None, str], OpenAI] = {}
 HARD_TIMEOUT = float(os.environ.get("PROVER_LLM_TIMEOUT", "600"))
 
 
-def client() -> OpenAI:
+def client(model_name: str | None = None) -> OpenAI:
     """Client for the active model profile, or the env endpoint when the
     active model has no profile (or the profile specifies no base_url)."""
+    name = model_name or models.resolved_model_name()
     profile = models.active_profile()
     base_url = profile.base_url if profile and profile.base_url else None
     if base_url is None:
         base_url = os.environ.get("OPENAI_BASE_URL")
     api_key = profile.api_key if profile and profile.api_key else ""
     if not api_key:
-        api_key = os.environ.get("OPENAI_API_KEY", "unused")
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        # No explicit key: fall back to a stored OAuth credential for this
+        # model family (claude* → anthropic, gpt*/codex* → openai-codex).
+        from .oauth.access import token_for_model
+
+        oauth_token = token_for_model(name)
+        if oauth_token:
+            api_key = oauth_token
+    if not api_key:
+        api_key = "unused"
     key = (base_url, api_key)
     cached = _clients.get(key)
     if cached is not None:
@@ -156,7 +167,7 @@ def _call(system: str, messages: list[dict], temperature: float, model_name: str
         # Explicit thinking level (PROVER_THINKING): surface it as an
         # OpenAI-compatible reasoning effort (tau thinking.py → provider).
         kwargs["reasoning_effort"] = reasoning_effort_for_level(level)
-    resp = client().chat.completions.create(**kwargs)
+    resp = client(model_name).chat.completions.create(**kwargs)
     usage = resp.usage
     content = resp.choices[0].message.content or ""
     if not content:

@@ -1,0 +1,5 @@
+id = """coprime_mul_right"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_coprime_mul_right (a b c : ℕ) : Nat.Coprime a b → Nat.Coprime a c → Nat.Coprime a (b * c) := by
+  sorry"""

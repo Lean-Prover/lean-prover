@@ -1,0 +1,5 @@
+id = """bezout_nat"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_bezout_nat (a b : ℕ) : ∃ x y : ℤ, (a : ℤ) * x + (b : ℤ) * y = (Nat.gcd a b : ℤ) := by
+  sorry"""

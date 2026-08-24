@@ -1,0 +1,5 @@
+id = """even_two_mul"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_even_two_mul (n : ℕ) : Even (2 * n) := by
+  sorry"""

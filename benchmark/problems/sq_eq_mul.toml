@@ -1,0 +1,5 @@
+id = """sq_eq_mul"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_sq_eq_mul (a : ℕ) : a ^ 2 = a * a := by
+  sorry"""

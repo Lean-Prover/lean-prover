@@ -1,0 +1,5 @@
+id = """gcd_mul_right"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_gcd_mul_right (a b c : ℕ) : Nat.gcd (a * c) (b * c) = c * Nat.gcd a b := by
+  sorry"""

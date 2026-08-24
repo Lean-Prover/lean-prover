@@ -1,0 +1,5 @@
+id = """mul_add_nat"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_mul_add_nat (a b c : ℕ) : a * (b + c) = a * b + a * c := by
+  sorry"""

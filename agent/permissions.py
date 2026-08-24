@@ -52,6 +52,10 @@ class PermissionStore:
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or ProverPaths().config_dir / "permissions.json"
+        # No permissions.json on disk → the user never opted into the ACL;
+        # baseline modes are advisory and the gate stays open (explicit deny
+        # rules still block). A file that exists means the mode is enforced.
+        self.enforced = self.path.exists()
         self._data: dict[str, Any] = {"mode": "ask", "rules": {}}
         self._dirty = False
         self._read()
@@ -71,6 +75,9 @@ class PermissionStore:
     def save(self) -> None:
         with _LOCK:
             self._write()
+        # Persisting the store is the opt-in moment: baseline modes now
+        # govern this instance's decisions as well.
+        self.enforced = True
 
     def _write(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -139,26 +146,38 @@ class PermissionStore:
 
         Returns 'allow' | 'deny'. yolo always allows; ask defaults to deny
         (an explicit rule can still allow); auto defaults to allow.
+
+        When the store was never persisted (no permissions.json) the user has
+        not opted in: baseline modes are advisory and only explicit deny
+        rules block, so the gate never breaks tooling by default.
         """
         decision = self.lookup(tool, args)
         if decision is not None:
             return decision
-        mode = self.mode
-        if mode == "yolo":
+        if not self.enforced:
             return "allow"
-        if mode == "auto":
+        mode = self.mode
+        if mode in ("yolo", "auto"):
             return "allow"
         return "deny"
+
+    def reload(self) -> None:
+        """Re-read the store from disk (another instance may have saved)."""
+        self.enforced = self.path.exists()
+        self._read()
 
 
 def acl_before_tool_call(store: PermissionStore | None = None):
     """Return an async ``before_tool_call`` hook for the agent loop (step C).
 
     ``loop.run_agent_loop`` accepts a ``before_tool_call(call) -> (blocked,
-    reason)`` callback invoked before each tool runs. This builds one from the
-    ACL: a matching **deny** rule (exact tool + argument-substring pattern)
-    blocks the call with an explanatory reason; everything else is allowed, so
-    the gate never breaks tooling that has no explicit deny rule.
+    reason)`` callback invoked before each tool runs. The gate re-reads the
+    store on every call so rules saved mid-session (e.g. via the TUI's
+    ``/permissions remember deny``) apply immediately.
+
+    Semantics follow :meth:`PermissionStore.check`: an explicit rule decides;
+    otherwise baseline modes apply when the user has opted in (a persisted
+    permissions.json exists). Without one, only explicit deny rules block.
     """
     import json
 
@@ -166,8 +185,18 @@ def acl_before_tool_call(store: PermissionStore | None = None):
         store = PermissionStore()
 
     async def gate(call):
+        # Another instance (TUI /permissions, CLI) may have written rules
+        # since this gate was built — pick them up live. The read is a cheap
+        # JSON parse of a small file, once per tool call.
+        try:
+            mtime = store.path.stat().st_mtime_ns if store.path.exists() else None
+        except OSError:
+            mtime = None
+        if mtime != getattr(store, "_loaded_mtime", None):
+            store._loaded_mtime = mtime
+            store.reload()
         args = json.dumps(call.arguments, sort_keys=True, ensure_ascii=False)
-        if store.lookup(call.name, args) == "deny":
+        if store.check(call.name, args) == "deny":
             return True, f"permission denied for tool {call.name!r} by ACL"
         return False, None
 

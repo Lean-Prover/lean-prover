@@ -1,0 +1,5 @@
+id = """add_assoc_nat"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_add_assoc_nat (a b c : ℕ) : a + b + c = a + (b + c) := by
+  sorry"""

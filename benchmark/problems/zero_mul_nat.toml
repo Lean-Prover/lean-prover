@@ -1,0 +1,5 @@
+id = """zero_mul_nat"""
+difficulty = """trivial"""
+statement_revision = 1
+statement = """theorem prover_zero_mul_nat (a : ℕ) : 0 * a = 0 := by
+  sorry"""

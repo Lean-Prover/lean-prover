@@ -1,0 +1,5 @@
+id = """dvd_six_consecutive"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_dvd_six_consecutive (n : ℕ) : 6 ∣ n * (n + 1) * (n + 2) := by
+  sorry"""

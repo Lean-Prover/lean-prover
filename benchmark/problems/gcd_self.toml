@@ -1,0 +1,5 @@
+id = """gcd_self"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_gcd_self (n : ℕ) : Nat.gcd n n = n := by
+  sorry"""

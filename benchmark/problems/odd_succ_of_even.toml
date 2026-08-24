@@ -1,0 +1,5 @@
+id = """odd_succ_of_even"""
+difficulty = """easy"""
+statement_revision = 1
+statement = """theorem prover_odd_succ_of_even (n : ℕ) : Even n → Odd (n + 1) := by
+  sorry"""

@@ -1,0 +1,5 @@
+id = """sum_sq_formula"""
+difficulty = """medium"""
+statement_revision = 1
+statement = """theorem prover_sum_sq_formula (n : ℕ) : 6 * (∑ i ∈ range (n + 1), i ^ 2) = n * (n + 1) * (2 * n + 1) := by
+  sorry"""

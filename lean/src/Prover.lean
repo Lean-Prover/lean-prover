@@ -3,5 +3,5 @@ import ProverSupport
 
 open BigOperators Nat Finset
 
-theorem prover_loop (n : ℕ) : n + 0 = n := by
+theorem t2 (a b : ℕ) : a + b = b + a := by
   prover_finish

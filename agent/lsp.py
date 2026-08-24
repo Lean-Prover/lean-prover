@@ -97,6 +97,16 @@ class LeanLSP:
         finally:
             deadline.cancel()
 
+    def _read_exact(self, n: int) -> bytes | None:
+        """Read exactly `n` bytes; None on EOF or short read (stream lost)."""
+        buf = bytearray()
+        while len(buf) < n:
+            chunk = self._proc.stdout.read(n - len(buf))
+            if not chunk:
+                return None
+            buf.extend(chunk)
+        return bytes(buf)
+
     def _read_msg(self) -> dict | None:
         assert self._proc and self._proc.stdout
         headers = {}
@@ -111,7 +121,10 @@ class LeanLSP:
             n = int(headers.get("Content-Length", "0"))
             if n <= 0:
                 return None
-            return json.loads(self._proc.stdout.read(n))
+            body = self._read_exact(n)
+            if body is None:
+                return None
+            return json.loads(body)
         except (ValueError, json.JSONDecodeError):
             return None
 
@@ -128,6 +141,8 @@ class LeanLSP:
                 os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
             except OSError:
                 self._proc.kill()
+        # The server is gone: the next one must see didOpen again.
+        self._opened = False
 
     def _ensure_started(self) -> bool:
         if self._proc and self._proc.poll() is None:
@@ -144,6 +159,8 @@ class LeanLSP:
             )
         except OSError:
             return False
+        # Fresh server process: any didOpen from the previous one is void.
+        self._opened = False
         init = self._request(
             "initialize",
             {

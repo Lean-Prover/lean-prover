@@ -1,0 +1,5 @@
+id = """exists_prime_ge"""
+difficulty = """hard"""
+statement_revision = 1
+statement = """theorem prover_exists_prime_ge (n : ℕ) : ∃ p, n ≤ p ∧ Nat.Prime p := by
+  sorry"""
