@@ -124,10 +124,14 @@ class PermissionStore:
         """Resolve the decision for (tool, args): 'allow' | 'deny' | None.
 
         Exact (tool, pattern) match where pattern is a substring of the
-        serialised args decides. Most-specific (longest pattern) wins on ties.
+        serialised args decides. Most-specific (longest pattern) wins on ties;
+        when two rules share the longest pattern, **deny wins** so an allow
+        rule can never mask an equal-or-shorter deny.
         """
         rules = self._data.get("rules", {})
-        best: tuple[int, bool] | None = None
+        best_len = -1
+        allow_seen = False
+        deny_seen = False
         for r in rules.values():
             if r.get("tool") != tool:
                 continue
@@ -135,11 +139,16 @@ class PermissionStore:
             if pattern and pattern not in args:
                 continue
             length = len(pattern)
-            if best is None or length > best[0]:
-                best = (length, bool(r.get("allow")))
-        if best is None:
+            if length > best_len:
+                best_len = length
+                allow_seen = bool(r.get("allow"))
+                deny_seen = not r.get("allow")
+            elif length == best_len:
+                allow_seen = allow_seen or bool(r.get("allow"))
+                deny_seen = deny_seen or not r.get("allow")
+        if best_len < 0:
             return None
-        return "allow" if best[1] else "deny"
+        return "deny" if deny_seen else "allow"
 
     def check(self, tool: str, args: str = "") -> str:
         """Full decision: rule override, else baseline mode.
@@ -155,6 +164,16 @@ class PermissionStore:
         if decision is not None:
             return decision
         if not self.enforced:
+            # No permissions.json: the user never opted into the ACL. Keep the
+            # gate open (so tooling keeps working) but never let that be silent.
+            if not _warned_no_acl:
+                _warned_no_acl.add(True)
+                import sys
+
+                print("[permissions warn] no permissions.json — the tool ACL is "
+                      "inactive; every tool runs ungated. Run /permissions or "
+                      "create ~/.prover/permissions.json to enforce modes.",
+                      file=sys.stderr)
             return "allow"
         mode = self.mode
         if mode in ("yolo", "auto"):
@@ -204,3 +223,4 @@ def acl_before_tool_call(store: PermissionStore | None = None):
 
 
 _LOCK = threading.Lock()
+_warned_no_acl: set[bool] = set()

@@ -49,8 +49,8 @@ files, the god-class TUI, the fat CLI dispatcher).
 | # | Problem | Location | Status |
 |---|---|---|---|
 | 1 | `loop.py` was a fragile import-shim (try/except swallow + LEAN_DIR re-patch) | `loop.py` | **done** (facade, `3f12704`) |
-| 2 | God-class TUI | `tui.py` 2 280 LOC | open |
-| 3 | Fat CLI dispatcher | `main.py` 725 LOC | open |
+| 2 | God-class TUI | `tui.py` 2 280 LOC | **done** (`tui/` package, below) |
+| 3 | Fat CLI dispatcher | `main.py` 725 LOC | **done** (`cli/` registry, below) |
 | 4 | Engine reached ad hoc by 7 modules | `coding_session`, `coding_tools`, `loop`, `main`, `rpc`, `system_prompt`, `tui` | open (facade thin end) |
 | 5 | ACL gate only on MCP | `mcp.py` | **done** (local loop gate, next commit) |
 
@@ -104,7 +104,7 @@ stable core API; ports-and-adapters for robustness.**
 | E | **Ports & adapters**: `LLMClient`/`LeanRunner`/`LSPClient` interfaces (enables fakes/stubs for tests, provider swap) | Medium | Medium |
 | F | **Robustness**: retry+backoff with jitter, per-attempt cancellation, transactional session recovery (WAL), structured telemetry sink behind a port | Medium | Medium |
 | G | **Embeddability**: add ACP server; optional wasm via thin adapter (reuse today's `providers/` + pure engine) | Low (optional) | Medium |
-| H | **CLI→`cli/` registry**: thin command modules, remove god-dispatcher | Low | Low-Medium |
+| H | **CLI→`cli/` registry**: thin command modules, remove god-dispatcher | Low | Low-Medium | **done** |
 
 Priority order is **A → D → C → E → F → B → H**; G only if embeddability is a
 stated goal. A/D give the biggest maintainability win with the least churn;
@@ -158,13 +158,57 @@ path enforces the same ACL as the MCP server. Verified: 36 loop/permissions +
 internals — mostly done via the `loop.py` facade). Step **E/F** (ports &
 adapters, robustness) after that.
 
-**Step B — TRIED, REVERTED, DEFERRED.** A TUI extraction into `tui_screens.py`
-was attempted and reverted. Findings corrected the earlier "clean split"
-assessment: the 10 `ModalScreen` subclasses are **not** self-contained. They
-also reference `render_event` (a ~50-line function defined in `tui.py`), the
-module constants `REPO`/`PROBLEMS_FILE`, and `sess`/`SessionManager`. A clean
-extraction would require relocating those too (a much larger, higher-risk
-refactor), and importing them into `tui_screens.py` from `tui.py` would be a
-circular import. So the TUI is not a clean split — leave `tui.py` (2 280 LOC)
-as-is unless a future need (e.g. a real second TUI surface) justifies the bigger
-refactor. Deferred.
+**Step B — DONE (`tui/` package).** The earlier assessment that the TUI was
+"not a clean split" was resolved by making `agent.tui` a **package** instead of
+a module:
+
+- `agent/tui/app.py` — `ProverApp` (composition, bindings, command dispatch)
+- `agent/tui/screens.py` — the 12 `ModalScreen` subclasses + `build_session_label`
+- `agent/tui/handlers.py` — `ProverRunMixin` (proof-run + live event rendering)
+- `agent/tui/app.tcss` — app chrome styling; `agent/tui/screens.tcss` — screen
+  styling, loaded via each screen's `CSS_PATH` (per-screen CSS)
+- `agent/tui/__init__.py` — the public API + the `REPO` / `PROBLEMS_FILE` /
+  `MAX_WORKERS` module constants.
+
+The reason the earlier extraction failed was that the screens referenced
+`render_event`, `REPO`/`PROBLEMS_FILE`, and `sess`/`SessionManager`. That is
+handled by (a) keeping `render_event`/widgets in the existing `tui_render.py`
+leaf module, and (b) defining `REPO`/`PROBLEMS_FILE`/`MAX_WORKERS` in the
+package `__init__` *before* the submodule imports and having the app/screens
+read them through the `agent.tui` namespace at call time — so the test
+monkeypatch contract (`monkeypatch.setattr("agent.tui.REPO", ...)`) survives
+the split.
+
+The TUI now uses Textual idioms throughout: the parallel proof runner spawns
+**one Textual thread-worker per problem** (`@work(thread=True, group="prove")`)
+bounded by a semaphore (replacing the inner `ThreadPoolExecutor`), the run
+coordinator and background jobs (branch/login/update) use `@work` decorators,
+worker count is a Textual `Reactive`, and all widget access goes through
+`call_from_thread`. Verified: 655 tests pass (twice), TUI worker smoke tests,
+real `prover` CLI, ruff clean.
+
+**Step H — DONE (`cli/` registry).** The fat CLI dispatcher in `agent/main.py`
+(725 LOC) is now a thin re-export facade over the command registry in
+`agent/cli/`:
+
+- `agent/cli/parser.py` — the argparse dispatcher (`cli` / `_build_parser`)
+- `agent/cli/prove.py` — `prover prove` / `prover ask`
+- `agent/cli/bench.py` — `prover bench` (scoring core: `_prove_one`/`_run_problems`)
+- `agent/cli/leaderboard.py` — `prover leaderboard` + provenance/comparability
+- `agent/cli/sessions.py` — `prover sessions` / `prover usage`
+- `agent/cli/misc.py` — thin delegators (mcp/formalize/synth/finetune/tui/…)
+- `agent/cli/common.py` — shared helpers
+- `agent/cli/__init__.py` — the registry; `agent/main.py` re-exports it.
+
+Two things made this non-trivial and were handled deliberately:
+1. The existing `agent/cli.py` was the separate *coding facade* (prog
+   `prover-coding`, Tau port) — it collided with the `cli/` package name, so it
+   moved to `agent/cli_coding.py` (main.py delegation + `test_phase16` updated).
+2. The test suite monkeypatches `agent.main` module attributes (`prove`,
+   `prove_best_of`, `_prove_one`, `load_board`, `BOARD_FILE`, `cmd_tui`). The
+   command modules therefore read those names through the `agent.main` facade
+   at call time (`from agent import main as _m; _m.prove(...)`), the same
+   pattern as the TUI's `REPO`, so the monkeypatch contract survives unchanged.
+
+Verified: 658 tests pass (twice), real `prover` CLI (help/version/sessions/
+leaderboard/prove), ruff clean.

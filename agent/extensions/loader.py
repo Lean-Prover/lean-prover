@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 _EXTENSION_MODULE_PREFIX = "lean_prover_ext_"
+_warned_trusted: set[bool] = set()
 
 
 @dataclass
@@ -65,6 +66,14 @@ def load_extensions(
             pairs.append((p.stem, p))
         elif (p / "__init__.py").exists():
             pairs.append((p.name, p))
+
+    if pairs and not _warned_trusted:
+        _warned_trusted.add(True)
+        import sys
+
+        print("[extensions warn] loading extensions — these are fully trusted "
+              "arbitrary Python executed with your privileges. Only load "
+              "extensions you wrote or audited.", file=sys.stderr)
 
     loaded: list[LoadedExtension] = []
     failures: list[tuple[Path, str]] = []

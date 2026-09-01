@@ -71,22 +71,30 @@ def compact_history(
 def _attempt_summaries(
     messages: list[dict],
 ) -> list[tuple[str, str]]:
-    """Distinct (body, first-error) pairs from a run of old turns."""
+    """Distinct (body, first-error) pairs from a run of old turns.
+
+    Walks the interleaved message list and pairs each assistant attempt with
+    the *immediately preceding* user message, so compaction placeholders or a
+    dropped leading turn never shift the error attribution onto the wrong
+    attempt.
+    """
     seen: set[str] = set()
     out: list[tuple[str, str]] = []
-    users = [m for m in messages if m["role"] == "user"]
-    assistants = [m for m in messages if m["role"] == "assistant"]
-    for i, assistant in enumerate(assistants):
-        content = str(assistant.get("content", ""))
-        body = _first_code_lines(content)
-        # Skip non-attempt turns (compaction placeholders, "(no response)").
-        if not _ATTEMPT_RE.search(content) or body == "(empty)":
-            continue
-        if body in seen:
-            continue
-        seen.add(body)
-        err = _first_error(users[i]) if i < len(users) else "?"
-        out.append((body, err))
+    last_user: dict | None = None
+    for m in messages:
+        if m["role"] == "user":
+            last_user = m
+        elif m["role"] == "assistant":
+            content = str(m.get("content", ""))
+            body = _first_code_lines(content)
+            # Skip non-attempt turns (compaction placeholders, "(no response)").
+            if not _ATTEMPT_RE.search(content) or body == "(empty)":
+                continue
+            if body in seen:
+                continue
+            seen.add(body)
+            err = _first_error(last_user) if last_user is not None else "?"
+            out.append((body, err))
     return out[-MAX_LISTED_ATTEMPTS:]
 
 

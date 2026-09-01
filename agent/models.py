@@ -119,8 +119,23 @@ def save_store(active: str = "", profiles: list[ModelProfile] | None = None) -> 
         "active": active or "",
         "profiles": [p.to_dict() for p in (profiles or load_profiles())],
     }
+    # The store may carry api_key values, so write it like every other
+    # credential path: 0600 + atomic replace (never world-readable).
+    import tempfile
+
     try:
-        path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".models-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(json.dumps(body, indent=2) + "\n")
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     except OSError:
         pass
 
@@ -153,6 +168,7 @@ _MODEL_PROVIDER_HINTS = (
     ("qwen", "openai_compatible"),
     ("deepseek", "openai_compatible"),
     ("mistral", "openai_compatible"),
+    ("glm", "particle"),
 )
 
 
@@ -195,6 +211,15 @@ def _provider_config_for_model(name: str):
     lowered = name.lower()
     for prefix, kind in _MODEL_PROVIDER_HINTS:
         if lowered.startswith(prefix):
+            # A named provider hint (e.g. glm->particle) resolves across both
+            # persisted and built-in provider configs; kind hints ("openai",
+            # "openai_compatible", "anthropic") stay restricted to user-persisted
+            # configs so built-ins never shadow an env OPENAI_BASE_URL endpoint.
+            if kind not in ("openai", "openai_compatible", "anthropic"):
+                from .provider_config import provider_config_from_name
+
+                pc = provider_config_from_name(kind)
+                return pc
             for cfg in load_provider_settings():
                 if (kind == "anthropic" and cfg.kind == "anthropic") or (
                     kind == "openai_compatible" and cfg.kind != "anthropic"

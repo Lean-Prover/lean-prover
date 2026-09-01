@@ -22,6 +22,23 @@ def has_sorry_warning(output: str) -> bool:
     return bool(SORRY_WARNING_RE.search(output))
 
 
+def split_signature(statement: str) -> str:
+    """Return the theorem signature up to and including the LAST `:= by`.
+
+    Accepts statements with or without a trailing proof. Benchmarks with
+    scaffolding definitions ahead of the target theorem (Putnam `_solution`
+    scaffolds, FormalQualBench namespaces) carry multiple `:= by`s — the
+    target theorem is always the LAST declaration, so we cut at the last one.
+    """
+    s = statement.strip()
+    last_end = None
+    for m in re.finditer(r":=\s*by\b", s):
+        last_end = m.end()
+    if last_end is not None:
+        return s[:last_end]
+    return s + " := by"
+
+
 # ---- sandboxing (leanprover/comparator + lean-workbench pattern) ----
 # LLM-generated Lean is arbitrary code the harness executes. PROVER_SANDBOX
 # wraps every compile in a restricted profile: filesystem read-only except
@@ -81,8 +98,16 @@ def sandbox_cmd(cmd: list[str], cwd: Path, mode: str | None = None) -> list[str]
             "--",
             *cmd,
         ]
-    if mode != "auto":
-        _warn_once(mode)
+    else:
+        # auto requested but neither bwrap nor landrun is installed: degrade
+        # to direct execution, but say so — never silently run unsandboxed.
+        import sys
+
+        if "auto" not in _warned_missing:
+            _warned_missing.add("auto")
+            print("[sandbox warn] PROVER_SANDBOX=auto but neither `bwrap` nor "
+                  "`landrun` is installed — running unsandboxed.",
+                  file=sys.stderr)
     return cmd
 
 
@@ -102,13 +127,18 @@ def _run_group(cmd: list[str], cwd: Path, timeout: int) -> tuple[int, str]:
     (lake spawns lean) keep stdout open, so its internal drain hangs forever.
     Running in its own session and using killpg() avoids that.
     """
-    proc = subprocess.Popen(
-        sandbox_cmd(cmd, cwd),
-        cwd=cwd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-    )
+    try:
+        proc = subprocess.Popen(
+            sandbox_cmd(cmd, cwd),
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        # Missing `lake`/sandbox wrapper (or the sandbox refused to launch):
+        # degrade to a failure result instead of killing the whole run.
+        return -1, f"(failed to launch: {exc})"
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
         return proc.returncode, (stdout or b"").decode(errors="replace") + (stderr or b"").decode(errors="replace")

@@ -8,7 +8,6 @@ No network: the httpx client is faked.
 from __future__ import annotations
 
 import json
-import queue
 from typing import ClassVar
 
 import pytest
@@ -140,7 +139,9 @@ def test_emit_events_parses_blocks(monkeypatch) -> None:
     p = AnthropicProvider(base_url="https://api.anthropic.com", api_key="k")
     body = {"model": "claude", "max_tokens": 4096, "system": "sys",
             "messages": []}
-    chunks: queue.Queue = queue.Queue()
+    from agent.providers._bridge import StreamBridge
+
+    bridge = StreamBridge()
     _FakeHttpx.lines = _sse(
         {"type": "content_block_start", "index": 0,
          "content_block": {"type": "text"}},
@@ -149,10 +150,10 @@ def test_emit_events_parses_blocks(monkeypatch) -> None:
         {"type": "content_block_stop", "index": 0},
         {"type": "message_delta", "delta": {"stop_reason": "end_turn"}},
     )
-    p._emit_events("claude", body, chunks)
+    p._emit_events("claude", body, bridge)
     kinds = []
     while True:
-        kind, payload = chunks.get_nowait()
+        kind, payload = bridge.chunks.get_nowait()
         if kind == "end":
             break
         kinds.append(payload["type"])

@@ -333,7 +333,9 @@ class LeanLSP:
                 try:
                     self._proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    pass
+                    # Already SIGKILLed; block to reap the zombie so the PID
+                    # is not leaked across many sessions.
+                    self._proc.wait()
                 self._proc = None
             self._opened = False
             self.version = 1

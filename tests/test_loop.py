@@ -817,6 +817,75 @@ def _audit_run(monkeypatch, body: str, max_steps: int = 2) -> loop.Result:
                       record_session=False, skip_hammers=True)
 
 
+def test_prove_uses_injected_llm_client(hermetic, monkeypatch) -> None:
+    """A custom LLMClient injected into prove() drives the repair loop's LLM
+    calls (ports-and-adapters: the engine depends on the port, not the module)."""
+    calls = {"n": 0}
+
+    def check(_f, _d):
+        return False, "fake.lean:1:1: error: goals remain\n"
+
+    monkeypatch.setattr(loop.lean, "check_file", check)
+
+    class FakeClient:
+        def chat(self, system, messages, temperature=0.2, model_name=None):
+            calls["n"] += 1
+            return llm.LLMResponse(content="```lean\n  simp\n```", prompt_tokens=1,
+                                   completion_tokens=1, total_tokens=2)
+
+        def estimate_cost(self, pt, ct, model_name=None):
+            return 0.0
+
+        def context_window_tokens(self, model_name=None):
+            return 1_000_000
+
+        def model(self):
+            return "fake"
+
+    loop.prove(STATEMENT, max_steps=2, verbose=False, problem_id="port",
+               goal_feedback=False, record_session=False,
+               skip_hammers=True, llm_client=FakeClient())
+    assert calls["n"] >= 1
+
+
+def test_prove_uses_injected_retriever(hermetic, monkeypatch) -> None:
+    """An injected Retriever drives PROVER_RETRIEVE hint generation."""
+    monkeypatch.setenv("PROVER_RETRIEVE", "1")
+    seen = {"k": None}
+
+    class FakeRetriever:
+        def search_lemmas(self, statement, k=5):
+            seen["k"] = k
+            return [{"name": "x", "signature": "theorem x : True"}]
+
+        def corpus_append(self, *a, **k):
+            return False
+
+    def check(_f, _d):
+        return False, "fake.lean:1:1: error: goals remain\n"
+
+    monkeypatch.setattr(loop.lean, "check_file", check)
+
+    class FakeLLM:
+        def chat(self, *a, **k):
+            return llm.LLMResponse(content="```lean\n  simp\n```", prompt_tokens=1,
+                                   completion_tokens=1, total_tokens=2)
+
+        def estimate_cost(self, *a, **k):
+            return 0.0
+
+        def context_window_tokens(self, *a, **k):
+            return 1_000_000
+
+        def model(self):
+            return "fake"
+
+    loop.prove(STATEMENT, max_steps=2, verbose=False, problem_id="retr",
+               goal_feedback=False, record_session=False,
+               skip_hammers=True, llm_client=FakeLLM(), retriever=FakeRetriever())
+    assert seen["k"] == 5
+
+
 def test_audit_gate_rejects_native_decide(hermetic, monkeypatch) -> None:
     """`by native_decide` compiles clean but depends on Lean.ofReduceBool,
     which the kernel audit flags — the loop reports not-proved and never

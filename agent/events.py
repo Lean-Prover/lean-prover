@@ -24,6 +24,21 @@ def record(event: str, **payload) -> dict:
     return {"t": time.time(), "event": event, **payload}
 
 
+def result_summary(rec: dict) -> str:
+    """Plain-text summary line for a ``result`` record.
+
+    Single source of truth for the PROVED/FAILED/stopped wording, shared by
+    the CLI ``format`` path and any other consumer (avoids drift).
+    """
+    secs = rec.get("seconds", 0.0)
+    steps = rec.get("steps", 0)
+    if rec.get("stopped"):
+        return f"stopped by user ({secs:.1f}s)"
+    if rec.get("proved"):
+        return f"PROVED ∎ ({steps} steps, {secs:.1f}s)"
+    return f"FAILED after {steps} steps ({secs:.1f}s)"
+
+
 def format(rec: dict) -> str | None:
     """Human-readable line for a record, or None if it shouldn't be printed."""
     ev = rec.get("event")
@@ -56,13 +71,7 @@ def format(rec: dict) -> str | None:
     if ev == "llm_error":
         return f"  [step {rec['step']}] {str(rec.get('error', ''))[:100]}"
     if ev == "result":
-        secs = rec.get("seconds", 0.0)
-        steps = rec.get("steps", 0)
-        if rec.get("stopped"):
-            return f"  stopped by user ({secs:.1f}s)"
-        if rec.get("proved"):
-            return f"  PROVED ∎ ({steps} steps, {secs:.1f}s)"
-        return f"  FAILED after {steps} steps ({secs:.1f}s)"
+        return f"  {result_summary(rec)}"
     return None
 
 

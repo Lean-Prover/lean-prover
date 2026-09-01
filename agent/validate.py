@@ -11,6 +11,23 @@ _AXIOM_RE = re.compile(r"\baxiom\b", re.IGNORECASE)
 _SORRY_RE = re.compile(r"\bsorry\b", re.IGNORECASE)
 _CONCAT_AXIOM_RE = re.compile(r'"\s*ax\s*"\s*\+\+\s*"\s*iom\s*"', re.IGNORECASE)
 _ELAB_BYPASS_RE = re.compile(r"\b(elab|elabCommand|runParserCategory)\b")
+# `#eval` executes arbitrary Lean code at elaboration time (file IO, network,
+# effects). Untrusted/MCP-supplied or prompt-injected proofs must never reach
+# it, so it is treated as an injection alongside `axiom`/`sorry`.
+_EVAL_RE = re.compile(r"^\s*#eval\b", re.MULTILINE)
+def _find_axiom_injections(text: str) -> list[str]:
+    hits: list[str] = []
+    if _AXIOM_RE.search(text):
+        hits.append("axiom")
+    if _SORRY_RE.search(text):
+        hits.append("sorry")
+    if _CONCAT_AXIOM_RE.search(text):
+        hits.append("concat-axiom")
+    if _ELAB_BYPASS_RE.search(text) and "axiom" in text.lower():
+        hits.append("elab-axiom")
+    if _EVAL_RE.search(text):
+        hits.append("#eval")
+    return hits
 
 # Kernel-level audit allowlist (leanprover/comparator trust model): a proof
 # may only depend on Lean's three standard axioms. Anything else — sorryAx

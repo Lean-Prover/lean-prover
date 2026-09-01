@@ -29,8 +29,6 @@ _LEGACY_MODELS_FILE = "models.json"
 class OpenAICompatibleConfig:
     """Compat flags for OpenAI-style chat endpoints (tau OpenAICompatibleConfig)."""
 
-    supports_images: bool = False
-    supports_prompt_cache_key: bool = False
     reasoning_effort: bool = False
     thinking_format: str | None = None  # "openai" | "qwen" | "deepseek" | None
     response_provider_header: bool = False
@@ -45,8 +43,6 @@ class OpenAICompatibleConfig:
     def from_dict(cls, data: dict[str, Any]) -> OpenAICompatibleConfig:
         d = data or {}
         return cls(
-            supports_images=bool(d.get("supports_images", False)),
-            supports_prompt_cache_key=bool(d.get("supports_prompt_cache_key", False)),
             reasoning_effort=bool(d.get("reasoning_effort", False)),
             thinking_format=d.get("thinking_format"),
             response_provider_header=bool(d.get("response_provider_header", False)),
@@ -67,7 +63,6 @@ class ProviderConfig:
     env_key: str = ""
     headers: dict[str, str] = field(default_factory=dict)
     compat: OpenAICompatibleConfig = field(default_factory=OpenAICompatibleConfig)
-    thinking_default: str | None = None
     max_context_window: int | None = None
 
     @property
@@ -95,7 +90,6 @@ class ProviderConfig:
             "env_key": self.env_key,
             "headers": self.headers,
             "compat": self.compat.to_dict(),
-            "thinking_default": self.thinking_default,
             "max_context_window": self.max_context_window,
         }
 
@@ -111,7 +105,6 @@ class ProviderConfig:
             env_key=str(d.get("env_key") or ""),
             headers=dict(d.get("headers") or {}),
             compat=OpenAICompatibleConfig.from_dict(compat if isinstance(compat, dict) else {}),
-            thinking_default=d.get("thinking_default"),
             max_context_window=d.get("max_context_window"),
         )
 
@@ -217,7 +210,6 @@ def _default_provider_configs() -> list[ProviderConfig]:
             compat=OpenAICompatibleConfig(
                 thinking_format="qwen", reasoning_effort=True
             ),
-            thinking_default="off",
         ),
         ProviderConfig(
             name="openai",
@@ -225,20 +217,16 @@ def _default_provider_configs() -> list[ProviderConfig]:
             base_url="https://api.openai.com/v1",
             env_key="OPENAI_API_KEY",
             compat=OpenAICompatibleConfig(
-                supports_images=True,
-                supports_prompt_cache_key=True,
                 reasoning_effort=True,
                 thinking_format="openai",
                 response_provider_header=True,
             ),
-            thinking_default="off",
         ),
         ProviderConfig(
             name="anthropic",
             kind="anthropic",
             base_url="https://api.anthropic.com",
             env_key="ANTHROPIC_API_KEY",
-            thinking_default="low",
         ),
         ProviderConfig(
             name="openrouter",
@@ -246,9 +234,17 @@ def _default_provider_configs() -> list[ProviderConfig]:
             base_url="https://openrouter.ai/api/v1",
             env_key="OPENROUTER_API_KEY",
             compat=OpenAICompatibleConfig(
-                supports_images=True, reasoning_effort=True
+                reasoning_effort=True
             ),
-            thinking_default="off",
+        ),
+        ProviderConfig(
+            name="particle",
+            kind="openai_compatible",
+            base_url="https://api.particle.ai/v1",
+            env_key="PARTICLE_API_KEY",
+            compat=OpenAICompatibleConfig(
+                reasoning_effort=True
+            ),
         ),
     ]
 

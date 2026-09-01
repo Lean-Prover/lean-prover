@@ -16,7 +16,9 @@ def search_loogle(query: str, limit: int = 5, timeout: int = 10) -> list[dict]:
     try:
         with urllib.request.urlopen(full, timeout=timeout) as resp:
             data = json.loads(resp.read().decode())
-    except Exception:  # noqa: BLE001
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        # Only network/parse failures degrade to the local fallback — never a
+        # broad catch that hides a real bug behind a full index build.
         return _fallback_keyword(query, limit)
     hits: list[dict] = []
     if isinstance(data, dict) and "hits" in data:
@@ -37,8 +39,10 @@ def search_loogle(query: str, limit: int = 5, timeout: int = 10) -> list[dict]:
 
 def _fallback_keyword(query: str, limit: int) -> list[dict]:
     try:
-        from .retrieval import search_lemmas
+        from .retrieval import enabled, search_lemmas
 
+        if not enabled():
+            return []
         lemmas = search_lemmas(query, k=limit)
         return [{"name": name, "type": sig, "doc": ""} for name, sig in lemmas]
     except Exception:  # noqa: BLE001

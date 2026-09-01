@@ -42,16 +42,11 @@ DEFAULTS: dict[str, tuple[Any, str, str]] = {
 
 # Keys a *project* (committed workspace `<cwd>/.prover/settings.json`) file
 # must never set. A repo is untrusted: letting it set `permission_mode` would
-# weaken the tool-policy ACL, and model/base_url/api_key would steer/leak the
-# API. The user's own `~/.prover/settings.json` keeps full control over these.
+# weaken the tool-policy ACL. (model/base_url/api_key are not settings at all
+# — they live in the provider/models stores, not DEFAULTS — so only the real
+# ACL knob needs stripping here.)
 _PROJECT_FORBIDDEN = frozenset({
     "permission_mode",
-    "model",
-    "base_url",
-    "api_key",
-    "provider",
-    "credentials",
-    "permission",
 })
 
 
@@ -139,7 +134,13 @@ def get(key: str, *, path: Path | None = None) -> Any:
     for layer in ("project", "user"):
         data = _layers(path).get(layer, {})
         if ckey in data:
-            return _coerce(ckey, data[ckey])
+            try:
+                return _coerce(ckey, data[ckey])
+            except (TypeError, ValueError):
+                # A wrong-typed value in one layer must never crash the agent;
+                # fall through to the next layer / default (bad settings files
+                # are tolerated by design).
+                continue
 
     # Repo-safe committed defaults (.prover.json) form the next-lowest layer.
     from .project_defaults import effective_defaults
@@ -160,15 +161,18 @@ def all_settings(*, path: Path | None = None) -> dict[str, Any]:
 
 
 def _layers(path: Path | None = None) -> dict[str, dict[str, Any]]:
-    # Cache keyed by BOTH resolved file paths: the value depends on the user
-    # settings file AND the cwd-relative project settings file, so a bare user
-    # path key goes stale when the working directory (and thus the project
-    # layer) changes within the same process.
+    # Cache keyed by BOTH resolved file paths AND their mtimes: the value
+    # depends on the user settings file and the cwd-relative project settings
+    # file, and edits to either made while a long-lived process runs must be
+    # picked up (a bare path key would go stale).
     from .paths import ProverPaths
 
-    user = str(path if path is not None else ProverPaths().config_dir / "settings.json")
-    project = str(Path.cwd() / ".prover" / "settings.json")
-    key = f"{user}::{project}"
+    user = path if path is not None else ProverPaths().config_dir / "settings.json"
+    project = Path.cwd() / ".prover" / "settings.json"
+    stamp = "|".join(
+        f"{p}:{(p.stat().st_mtime_ns if p.exists() else '')}" for p in (user, project)
+    )
+    key = f"{user}::{project}::{stamp}"
     cache = getattr(_layers, "_cache", None)  # type: ignore[attr-defined]
     if cache is None:
         cache = {}

@@ -9,11 +9,8 @@ OpenAICompatibleProvider's event ordering).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-import queue
-import threading
 from collections.abc import AsyncIterator
 
 from ..messages import (
@@ -46,6 +43,7 @@ except ImportError:  # pragma: no cover — httpx ships with openai
 
 _ANTHROPIC_VERSION = "2023-06-01"
 _MAX_TOKENS = 4096
+_MAX_RETRIES = 2  # bounded transient-failure retries
 
 _STOP_REASONS = {"end_turn": "stop", "max_tokens": "length",
                  "stop_sequence": "stop", "tool_use": "toolUse"}
@@ -174,30 +172,53 @@ class AnthropicProvider:
             headers["x-api-key"] = key
         return headers
 
-    def _emit_events(self, model: str, body: dict, chunks: queue.Queue) -> None:
-        """Stream Anthropic SSE and enqueue parsed (kind, payload) tuples."""
+    def _emit_events(self, model: str, body: dict, bridge) -> None:
+        """Stream Anthropic SSE and enqueue parsed (kind, payload) tuples.
+
+        Bounded retry on transient failures (connection / 5xx) with the
+        shared backoff+jitter, so a flaky endpoint degrades instead of
+        failing the whole turn (matching the OpenAI provider's resilience).
+        """
+        import time
+
+        from ..provider_retry import is_transient_error, retry_delay_seconds
+
         if httpx is None:
-            chunks.put(("error", RuntimeError("httpx is required for Anthropic")))
+            bridge.put("error", RuntimeError("httpx is required for Anthropic"))
             return
         url = self.base_url.rstrip("/") + "/v1/messages"
-        try:
-            with (
-                httpx.Client(timeout=httpx.Timeout(connect=15.0, read=900.0,
-                                                   write=15.0, pool=15.0)) as client,
-                client.stream("POST", url, json=body,
-                              headers=self._headers_for(model)) as resp,
-            ):
-                    if resp.status_code >= 400:
-                        chunks.put(("error", RuntimeError(
-                            f"Anthropic HTTP {resp.status_code}: {resp.text[:500]}")))
-                        return
-                    for line in resp.iter_lines():
-                        event = _parse_sse_data(line)
-                        if event is not None:
-                            chunks.put(("event", event))
-            chunks.put(("end", None))
-        except Exception as e:  # noqa: BLE001 — surfaced as error event
-            chunks.put(("error", e))
+        last_error: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                with (
+                    httpx.Client(timeout=httpx.Timeout(connect=15.0, read=900.0,
+                                                       write=15.0, pool=15.0)) as client,
+                    client.stream("POST", url, json=body,
+                                  headers=self._headers_for(model)) as resp,
+                ):
+                        if resp.status_code >= 400:
+                            err = RuntimeError(
+                                f"Anthropic HTTP {resp.status_code}: {resp.text[:500]}")
+                            if is_transient_error(f"{resp.status_code}") and attempt < _MAX_RETRIES:
+                                last_error = err
+                                time.sleep(retry_delay_seconds(attempt, max_delay_seconds=30.0))
+                                continue
+                            bridge.put("error", err)
+                            return
+                        for line in resp.iter_lines():
+                            event = _parse_sse_data(line)
+                            if event is not None:
+                                bridge.put("event", event)
+                bridge.put("end", None)
+                return
+            except Exception as e:  # noqa: BLE001 — surfaced as error event
+                if is_transient_error(str(e)) and attempt < _MAX_RETRIES:
+                    last_error = e
+                    time.sleep(retry_delay_seconds(attempt, max_delay_seconds=30.0))
+                    continue
+                bridge.put("error", e)
+                return
+        bridge.put("error", last_error or RuntimeError("anthropic retries exhausted"))
 
     async def stream_response(
         self,
@@ -222,43 +243,30 @@ class AnthropicProvider:
                 ov_messages.append(converted)
         body = self._request_body(model, system, ov_messages, tools)
 
-        chunks: queue.Queue[tuple[str, object]] = queue.Queue()
-        cancel_flag = threading.Event()
-        threading.Thread(
-            target=self._emit_events, args=(model, body, chunks),
-            daemon=True, name="anthropic-stream").start()
+        from ._bridge import StreamBridge
+
+        bridge = StreamBridge()
+        bridge.start(self._emit_events, (model, body, bridge))
 
         partial = AssistantMessage(content=[], model=model, api="anthropic")
         started = False
-        errored = False
         stop_reason: str | None = None
         # Per content-block index: dict with type/state accumulated across
         # start/delta/stop SSE events.
         blocks: dict[int, dict] = {}
-        poll = 0.2
 
         def _error(reason: str, message: str) -> AssistantErrorEvent:
-            nonlocal errored
-            errored = True
             stop = "aborted" if reason == "aborted" else "error"
             return AssistantErrorEvent(reason=reason, error=AssistantMessage(
                 content=list(partial.content), model=model, stop_reason=stop,
                 error_message=message))
 
         while True:
-            try:
-                kind, payload = await asyncio.to_thread(chunks.get, True, poll)
-            except queue.Empty:
-                if signal and signal.is_cancelled():
-                    cancel_flag.set()
-                    yield _error("aborted", "cancelled during stream")
-                    return
-                continue
-            except Exception:  # noqa: BLE001 — executor shutdown mid-stream
+            kind, payload = await bridge.next(signal)
+            if kind == "aborted":
+                yield _error("aborted", "cancelled during stream")
                 return
-
             if kind == "error":
-                cancel_flag.set()
                 yield _error("error", str(payload))
                 return
             if kind == "end":
@@ -349,8 +357,6 @@ class AnthropicProvider:
                         yield ToolCallEndEvent(content_index=ci,
                                                tool_call=tool, partial=partial)
 
-        if errored:
-            return
         if not started:
             yield AssistantStartEvent(partial=partial)
         reason = _STOP_REASONS.get(stop_reason or "", "stop")

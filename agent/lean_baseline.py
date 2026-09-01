@@ -27,13 +27,9 @@ SEARCH_OPTIONS = "set_option maxHeartbeats 0\n\n"
 
 
 def _signature(statement: str) -> str:
-    s = statement.strip()
-    last_end = None
-    for m in re.finditer(r":=\s*by\b", s):
-        last_end = m.end()
-    if last_end is not None:
-        return s[:last_end]
-    return s + " := by"
+    from .lean import split_signature
+
+    return split_signature(statement)
 
 
 def build_lean_file(statement: str, tactic: str = "prover_finish",
@@ -67,6 +63,14 @@ def load_problems(path: Path) -> list[Problem]:
     return problems
 
 
+def _safe_id(problem_id: str) -> str:
+    """Restrict an untrusted problem id to filesystem-safe characters so it
+    can never escape the tmp dir via ``..``/``/`` when used in a filename."""
+
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]", "_", problem_id)
+    return cleaned.strip(". ") or "problem"
+
+
 def run_baseline(
     problems: list[Problem],
     lean_dir: Path,
@@ -81,7 +85,7 @@ def run_baseline(
     unsolved: list[dict] = []
     t0 = time.time()
     for i, p in enumerate(problems, 1):
-        f = tmp_dir / f"Baseline_{p.id}.lean"
+        f = tmp_dir / f"Baseline_{_safe_id(p.id)}.lean"
         f.write_text(build_lean_file(p.statement, tactic, search_budget,
                                      search_depth), encoding="utf-8")
         ok, output = check_file(f, lean_dir, timeout=timeout)

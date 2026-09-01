@@ -9,9 +9,9 @@ A thin argparse entry point for the Tau-style coding facade:
     prover-coding rpc                                               RPC/MCP stdio server
     prover-coding export <session.jsonl> [--format f]               transcript export
 
-The full prover CLI (prove/bench/tui/…) stays in ``agent/main.py``; this
-module deliberately reuses its command primitives instead of forking the
-argument surface.
+The full prover CLI (prove/bench/tui/…) lives in ``agent/cli/``; this module is
+the small *coding* facade that main.py delegates login/update/version/chat/
+export to.
 """
 
 from __future__ import annotations

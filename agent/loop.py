@@ -355,11 +355,14 @@ from .prover_loop import (  # noqa: F401
 
 
 def prove(*args, **kwargs):
-    """Thin facade over :func:`prover_loop.prove` (syncs redirected LEAN_DIR)."""
+    """Thin facade over :func:`prover_loop.prove`.
+
+    The engine resolves its lean dir per-call from ``PROVER_LEAN_DIR``
+    (``_resolve_lean_dir``), so no module-global sync is needed here — a
+    mutated ``LEAN_DIR`` would only introduce a data race under --parallel.
+    """
     import agent.prover_loop as _pl
 
-    if LEAN_DIR is not _pl.LEAN_DIR:
-        _pl.LEAN_DIR = LEAN_DIR
     return _pl.prove(*args, **kwargs)
 
 
@@ -384,35 +387,29 @@ def prove_best_of(
 ):
     """Best-of-N facade over :func:`prove`, mirroring prover_loop.prove_best_of.
 
-    Loops through this module's ``prove`` so a ``loop.prove`` monkeypatch
-    (hermetic tests) is honoured, and always syncs a redirected ``LEAN_DIR``.
+    Delegates to the shared :func:`prover_loop._best_of_attempts` driver with
+    this module's ``prove``, so a ``loop.prove`` monkeypatch (hermetic tests)
+    is honoured without duplicating the temperature-ramp body.
     """
-    n = max(1, n_attempts)
-    results = []
-    for i in range(1, n + 1):
-        temp = temperature + temperature_delta * (i - 1)
-        r = prove(  # type: ignore
-            statement,
-            max_steps=max_steps,
-            verbose=verbose,
-            problem_id=problem_id,
-            goal_feedback=goal_feedback,
-            on_event=on_event,
-            should_stop=should_stop,
-            record_session=record_session,
-            skip_hammers=skip_hammers or i > 1,
-            temperature=temp,
-            difficulty=difficulty,
-            model_name=model_name,
-            lemma_plan=lemma_plan,
-            full_file=full_file,
-            adaptive_steps=adaptive_steps,
-        )
-        results.append(r)
-        if r.proved:
-            break
-    best = next((r for r in results if r.proved), None) or max(
-        results, key=lambda r: r.steps
+    from .prover_loop import _best_of_attempts
+
+    return _best_of_attempts(
+        prove,
+        statement,
+        n_attempts=n_attempts,
+        max_steps=max_steps,
+        verbose=verbose,
+        problem_id=problem_id,
+        goal_feedback=goal_feedback,
+        on_event=on_event,
+        should_stop=should_stop,
+        record_session=record_session,
+        skip_hammers=skip_hammers,
+        temperature=temperature,
+        temperature_delta=temperature_delta,
+        difficulty=difficulty,
+        model_name=model_name,
+        lemma_plan=lemma_plan,
+        full_file=full_file,
+        adaptive_steps=adaptive_steps,
     )
-    best.attempts = results  # type: ignore
-    return best

@@ -68,7 +68,6 @@ class CodingSession:
         self.harness = harness
         self.session_id = config.session_id
         self._model_choice = ModelChoice(model=config.model, provider=config.provider_name)
-        self._context_usage: ContextUsageEstimate | None = None
         self._pending_entries: list[Any] = []
 
     @classmethod
@@ -136,17 +135,27 @@ class CodingSession:
     def set_model(self, model: str, provider: str = "") -> None:
         self._model_choice = ModelChoice(model=model, provider=provider)
         self.harness._config.model = model
+        # Keep the session config in sync so the two never diverge.
+        self.config.model = model
+        if provider:
+            self.config.provider_name = provider
 
     def set_thinking_level(self, level: str) -> None:
+        from .thinking import set_thinking_level as _set_global
+
         self.config.thinking_level = level
+        # The provider path resolves thinking from the process override /
+        # env, not from CodingSessionConfig.thinking_level, so mirror the
+        # change into the global override or it would be a silent no-op.
+        _set_global(level)
 
     @property
     def context_usage(self) -> ContextUsageEstimate | None:
-        if self._context_usage is None:
-            self._context_usage = estimate_context_usage(
-                self.harness.config.system, list(self.harness.messages)
-            )
-        return self._context_usage
+        # Recompute on every read: harness.messages grows as the loop runs,
+        # so a cached estimate would go stale and mislead compaction/usage.
+        return estimate_context_usage(
+            self.harness.config.system, list(self.harness.messages)
+        )
 
     def append_custom_entry(self, kind: str, payload: dict[str, Any] | None = None) -> None:
         self._pending_entries.append({"type": "custom", "kind": kind, "payload": payload or {}})

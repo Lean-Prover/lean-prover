@@ -53,15 +53,32 @@ def create_pkce_pair() -> tuple[str, str]:
 
 
 def _local_platform_server(expected_state: str, timeout: float = 300.0) -> AuthorizationCode | None:
-    """Spin up a 127.0.0.1 listener capturing the OAuth redirect (stdlib)."""
+    """Spin up a 127.0.0.1 listener capturing the OAuth redirect (stdlib).
+
+    Binds the fixed LOCAL_PORT because that is the redirect URI registered with
+    the provider (changing it would break the token exchange); the handler is
+    hardened to only accept the exact callback path with the expected state.
+    """
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
     result: dict[str, str] = {}
 
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            query = urllib.parse.urlparse(self.path).query
-            params = dict(urllib.parse.parse_qsl(query))
+            parsed = urllib.parse.urlparse(self.path)
+            # Only the exact OAuth callback path is accepted; anything else is
+            # not part of this flow and gets a 404 (not a captured code).
+            if parsed.path != "/auth/callback":
+                self.send_response(404)
+                self.end_headers()
+                return
+            params = dict(urllib.parse.parse_qsl(parsed.query))
+            # Validate state BEFORE recording any code, so a request without
+            # the expected state can never satisfy the flow.
+            if expected_state and params.get("state") != expected_state:
+                self.send_response(400)
+                self.end_headers()
+                return
             result["code"] = params.get("code", "")
             result["state"] = params.get("state", "")
             self.send_response(200)
@@ -87,8 +104,6 @@ def _local_platform_server(expected_state: str, timeout: float = 300.0) -> Autho
             break
     server.server_close()
     if not result.get("code"):
-        return None
-    if expected_state and result.get("state") != expected_state:
         return None
     return AuthorizationCode(code=result["code"], state=result.get("state", ""))
 

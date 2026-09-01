@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import time
 from pathlib import Path
@@ -72,9 +71,9 @@ TEMPLATES: list[tuple[str, str, str]] = [
 
 
 def _sig(statement: str) -> str:
-    s = statement.strip()
-    m = re.search(r":=\s*by\b", s)
-    return s[: m.end()] if m else s + " := by"
+    from .lean import split_signature
+
+    return split_signature(statement)
 
 
 def generate_templates(

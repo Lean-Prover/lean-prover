@@ -189,7 +189,7 @@ def test_quiet_suppresses_bench_progress(monkeypatch, tmp_path, capsys) -> None:
         {"id": "p1", "statement": "theorem p1 : 1+1=2 := by norm_num", "difficulty": "trivial"},
     ]))
     rc = main.cmd_bench(_ns(problems=str(problems), max_steps=2, start=1, parallel=1,
-                            no_goal_feedback=False, record=True, no_hammers=False,
+                            no_goal_feedback=False, no_record=False, no_hammers=False,
                             n_attempts=1, full_file=False, adaptive=False,
                             report=None, validate=False))
     out = capsys.readouterr().out

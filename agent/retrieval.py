@@ -78,6 +78,11 @@ def _signature_for(path: Path) -> list[dict]:
 
 
 def _index_stamp(lean_dir: Path) -> tuple[int, int]:
+    """(file_count, total_bytes) of the Mathlib tree.
+
+    Not memoized: it is the sentinel that invalidates the disk index cache, so
+    it must reflect the current tree (a new/removed file changes count/bytes).
+    """
     src = lean_dir / ".lake" / "packages" / "mathlib" / "Mathlib"
     total = 0
     count = 0
@@ -156,6 +161,9 @@ def corpus_path(lean_dir: Path) -> Path:
     return lean_dir.parent / "corpus" / "lean_proved.jsonl"
 
 
+_corpus_seen_cache: dict[str, set[str]] = {}
+
+
 def corpus_append(lean_dir: Path, statement: str, proof: str) -> bool:
     """Record a freshly proved theorem in the corpus (idempotent by id).
 
@@ -163,6 +171,10 @@ def corpus_append(lean_dir: Path, statement: str, proof: str) -> bool:
     use. The stored tactic column is the native tactic when the file was
     closed by a pre-pass, otherwise the verified tactic text. Best-effort:
     never raises into the proof loop.
+
+    The seen-id set is cached in memory and updated on each append, so a
+    long proving session does not re-read the whole corpus (O(n)) per solved
+    proof.
     """
     import hashlib
 
@@ -177,18 +189,23 @@ def corpus_append(lean_dir: Path, statement: str, proof: str) -> bool:
     else:
         tag = proof.strip()
     path = corpus_path(lean_dir)
-    if path.exists():
+    key = str(path)
+    seen = _corpus_seen_cache.get(key)
+    if seen is None:
         seen = set()
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                seen.add(json.loads(line).get("id", ""))
-            except json.JSONDecodeError:
-                continue
-        if name in seen:
-            return False
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                try:
+                    seen.add(json.loads(line).get("id", ""))
+                except json.JSONDecodeError:
+                    continue
+        _corpus_seen_cache[key] = seen
+    if name in seen:
+        return False
     append_lines([
         {"id": name, "difficulty": "auto", "statement": header, "tactic": tag},
     ], path)
+    seen.add(name)
     return True
 
 

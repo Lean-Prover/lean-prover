@@ -1,8 +1,8 @@
 """Phase 16 tests — TUI state, rendering, CLI, update/updater.
 
-Covers the Tau-parity surfaces added in Phase 16: TuiState batching,
-conversation renderers, markdown session export with cost table, the
-coding CLI dispatch, and the version/update-check primitives.
+Covers the Tau-parity surfaces added in Phase 16: conversation renderers,
+markdown session export with cost table, the coding CLI dispatch, and the
+version/update-check primitives.
 """
 
 from __future__ import annotations
@@ -13,58 +13,6 @@ import pytest
 
 from agent.messages import UserMessage
 from agent.rendering import RenderOptions, render_conversation_transcript
-from agent.tui_state import TuiState
-
-# ---------------------------------------------------------------- TuiState
-
-
-def test_tui_state_tool_lifecycle() -> None:
-    state = TuiState()
-    state.start_turn()
-    display = state.add_tool_call("c1", "read", {"path": "f.lean"})
-    assert state.format_tool_call_invocation(display).startswith("…")
-    state.record_tool_update("c1", status="done", result_text="lean says ok")
-    assert display.status == "done"
-    assert "✓" in state.format_tool_call_invocation(display)
-    assert state.result_preview(display) == "lean says ok"
-
-
-def test_tui_state_unknown_call_id_ignored() -> None:
-    state = TuiState()
-    assert state.record_tool_update("missing", status="done") is None
-
-
-def test_tui_state_batched_groups_and_line() -> None:
-    state = TuiState()
-    state.start_turn()
-    state.add_tool_call("c1", "read", {})
-    state.add_tool_call("c2", "edit", {})
-    groups = state.batched_groups()
-    assert len(groups) == 1 and groups[0].names == ("read", "edit")
-    line = state.active_tool_line()
-    assert line and "read" in line and "edit" in line
-
-
-def test_tui_state_result_preview_truncation() -> None:
-    state = TuiState()
-    display = state.add_tool_call("c1", "read", {})
-    state.record_tool_update("c1", result_text="x" * 5000)
-    assert state.result_preview(display).endswith("[…]")
-
-
-def test_tui_state_custom_markup_failure_dedupe() -> None:
-    calls = {"n": 0}
-
-    def boom(message_type, message):
-        calls["n"] += 1
-        raise RuntimeError("nope")
-
-    state = TuiState(custom_markup_resolver=boom)
-    assert state.resolve_custom_markup("chart", {}) is None
-    assert state.resolve_custom_markup("chart", {}) is None
-    assert calls["n"] == 2
-    assert state.custom_failures_reported["chart"] is True
-
 
 # ---------------------------------------------------------------- rendering
 
@@ -125,21 +73,21 @@ def test_markdown_export_without_cost_table(tmp_path: Path) -> None:
 
 
 def test_cli_version(capsys) -> None:
-    from agent.cli import main
+    from agent.cli_coding import main
 
     assert main(["version"]) == 0
     assert "lean-prover 0.1.0" in capsys.readouterr().out
 
 
 def test_cli_export_missing_session(capsys, tmp_path) -> None:
-    from agent.cli import main
+    from agent.cli_coding import main
 
     assert main(["export", str(tmp_path / "nope.jsonl")]) == 2
     assert "not found" in capsys.readouterr().err
 
 
 def test_cli_export_round_trip(tmp_path, monkeypatch) -> None:
-    from agent.cli import main
+    from agent.cli_coding import main
 
     session = tmp_path / "sess.jsonl"
     session.write_text('{"event": "result", "proved": true, "steps": 1}\n')
@@ -150,7 +98,7 @@ def test_cli_export_round_trip(tmp_path, monkeypatch) -> None:
 
 
 def test_cli_parser_requires_command() -> None:
-    from agent.cli import build_parser
+    from agent.cli_coding import build_parser
 
     parser = build_parser()
     with pytest.raises(SystemExit):

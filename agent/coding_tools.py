@@ -153,14 +153,25 @@ def apply_edits_to_normalized_content(
 
 
 _FILE_LOCKS: dict[str, asyncio.Lock] = {}
+_FILE_LOCKS_MAX = 512
 
 
 def file_lock(path: str | Path) -> asyncio.Lock:
-    """Per-path asyncio lock (tau's _file_lock registry) to serialize edits."""
+    """Per-path asyncio lock (tau's _file_lock registry) to serialize edits.
+
+    Bounded LRU: long-lived sessions that touch many distinct files must not
+    leak one lock per path forever, so the oldest entry is evicted past the cap.
+    """
     key = str(normalize_path(path))
     lock = _FILE_LOCKS.get(key)
     if lock is None:
+        if len(_FILE_LOCKS) >= _FILE_LOCKS_MAX:
+            _FILE_LOCKS.pop(next(iter(_FILE_LOCKS)))
         lock = asyncio.Lock()
+        _FILE_LOCKS[key] = lock
+    else:
+        # Refresh recency so the cap evicts the least-recently-used path.
+        _FILE_LOCKS.pop(key)
         _FILE_LOCKS[key] = lock
     return lock
 
@@ -224,11 +235,11 @@ def create_coding_tools(cwd: Path | None = None, image_support: ImageSupportStat
             except OSError as exc:
                 return {"is_error": True, "content": f"read failed: {exc}"}
             line_ending = detect_line_ending(original)
-            normalized = original
-            if line_ending != "\n":
-                normalized = original.replace(line_ending, "\n")
+            # apply_edits_to_normalized_content normalizes content to LF and
+            # restores line_ending itself, so pass the original content and
+            # only normalize the edit strings (which must match LF content).
             edits = [{"old_string": e.get("old_string", "").replace(line_ending, "\n") if line_ending != "\n" else e.get("old_string", ""), "new_string": e.get("new_string", "").replace(line_ending, "\n") if line_ending != "\n" else e.get("new_string", "")} for e in edits_raw]
-            new_content, patch, error = apply_edits_to_normalized_content(normalized, edits, line_ending=line_ending, path=str(path))
+            new_content, patch, error = apply_edits_to_normalized_content(original, edits, line_ending=line_ending, path=str(path))
             if error:
                 return {"is_error": True, "content": error}
             try:

@@ -137,7 +137,10 @@ def _get_lean_file(problem_id: str | None = None, lean_dir: Path | None = None) 
     if problem_id:
         tmp_dir = root / "tmp"
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        return tmp_dir / f"Prover_{problem_id}.lean"
+        # problem_id may come from an untrusted benchmark/MCP source — never
+        # let it escape the tmp dir via `..`/`/` in the filename.
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", problem_id)
+        return tmp_dir / f"Prover_{safe}.lean"
     # Fallback to original single file (for `prove` command)
     return root / "src" / "Prover.lean"
 
@@ -150,14 +153,7 @@ def _split_signature(statement: str) -> str:
     FormalQualBench namespaces) carry multiple `:= by`s — the target theorem is
     always the LAST declaration, so we cut at the last one.
     """
-    s = statement.strip()
-    last_end = None
-    for m in re.finditer(r":=\s*by\b", s):
-        last_end = m.end()
-    if last_end is not None:
-        return s[:last_end]
-    # No `:= by` present — append it.
-    return s + " := by"
+    return lean.split_signature(statement)
 
 
 def _extract_body(text: str) -> str:
@@ -242,6 +238,187 @@ def _extract_full_file(text: str, signature: str) -> str | None:
     return code[: mm.start()] + signature + code[mm.end():]
 
 
+def _seed_resume(manager, resume_from, branch_at, branch_summary, emit):
+    """Seed the repair history from a recorded session (resume/branch).
+
+    Returns (history, body). ``branch_at`` keeps only the first N user/assistant
+    turns; ``branch_summary`` prepends what the rest of the previous run did.
+    """
+    body = None
+    history = []
+    records = []
+    for rec in manager.list_sessions():
+        if rec.id == resume_from:
+            records = read_session(Path(rec.path))
+            break
+    if records:
+        seed = history_from_records(records)
+        if branch_at is not None:
+            # branch_at = keep only the first N user/assistant turns,
+            # discarding the rest of the recorded trajectory
+            # (tau: repoint the LeafEntry at an earlier entry).
+            seed = seed[: max(0, branch_at) * 2]
+        if seed:
+            history = seed[:12]
+            if branch_summary:
+                # Context for a continuation from an earlier point: what
+                # the rest of the previous run already did (tau's
+                # BRANCH_SUMMARY_PREAMBLE seeding).
+                from .branch_summary import BRANCH_SUMMARY_PREAMBLE
+
+                history.insert(0, {
+                    "role": "user",
+                    "content": f"{BRANCH_SUMMARY_PREAMBLE}\n{branch_summary}",
+                })
+            last_asst = next(
+                (m["content"] for m in reversed(seed)
+                 if m["role"] == "assistant" and m["content"].strip()
+                 and m["content"] != "(no response)"),
+                None,
+            )
+            if last_asst:
+                body = _extract_body(last_asst)
+            emit("resume", session_id=resume_from, seed_turns=len(seed) // 2,
+                 branch_at=branch_at)
+    return history, body
+
+
+def _hammer_prepass(*, signature, full_file, content, skip_hammers, body,
+                    target_file, write_file, check_file, emit, stop_requested,
+                    finish):
+    """One-shot hammer tactics before any LLM tokens.
+
+    Returns (body, early_result). ``early_result`` is a completed :class:`Result`
+    when a hammer closed the goal (the caller must return it immediately);
+    otherwise it is None and ``body`` is the initial proof body to run.
+    """
+    if body is None and not skip_hammers:
+        prepass = "prover_search" if os.environ.get("PROVER_SEARCH") else "prover_finish"
+        prepass_opts = ""
+        depths = ["3"]
+        budget = "1000"
+        if prepass == "prover_search":
+            raw_depths = os.environ.get("PROVER_SEARCH_DEPTH", "3")
+            depths = [d for d in raw_depths.split(",") if d.strip().isdigit()] or ["3"]
+            b = os.environ.get("PROVER_SEARCH_BUDGET", "1000")
+            budget = b if b.isdigit() else "1000"
+            prepass_opts = "set_option maxHeartbeats 0\n"
+            if budget != "1000":
+                prepass_opts += f"set_option prover_search.budget {budget}\n"
+        # Depth ramp (PROVER_SEARCH_DEPTH="3,4,5"): retry the whole search at
+        # each depth until something closes. Budget is shared per depth.
+        for d in depths:
+            tactic = f"prover_search {d}" if prepass == "prover_search" else "prover_finish"
+            write_file(prepass_opts + signature + "\n  " + tactic)
+            ok, output = check_file()
+            if ok:
+                emit("hammer", i=1, total=1, tactic=tactic, ok=True, output="")
+                return body, finish(True, 1, target_file.read_text(), 0.0)
+            if prepass != "prover_search":
+                break
+            if d != depths[-1]:
+                emit("hammer", i=int(d), total=len(depths), tactic=tactic,
+                     ok=False, output=output[-500:])
+        if "unknown module prefix 'ProverSupport'" not in output:
+            # native chain ran and failed — every hammer failed
+            emit("hammer", i=1, total=1, tactic=prepass, ok=False,
+                 output=output[-500:])
+        else:
+            # ProverSupport not built: per-hammer fallback loop
+            emit("hammer", i=1, total=len(HAMMERS) + 1, tactic=prepass,
+                 ok=False, output=output[-500:])
+            for i, hammer in enumerate(HAMMERS, 1):
+                if stop_requested():
+                    break
+                write_file(signature + "\n  " + hammer)
+                ok, output = check_file()
+                emit("hammer", i=i + 1, total=len(HAMMERS) + 1, tactic=hammer,
+                     ok=ok, output="" if ok else output[-500:])
+                if ok:
+                    return body, finish(True, i, target_file.read_text(), 0.0)
+        emit("llm_start")
+        body = "  sorry"  # placeholder so the first build reports sorry
+    if body is not None:
+        write_file(signature + "\n" + body)
+    elif not full_file:
+        body = "  sorry"
+        write_file(signature + "\n  sorry")
+    else:
+        write_file(content)  # full-file, no resume seed: initial `sorry` file
+    return body, None
+
+
+def _run_lemma_plan(*, signature, active_model, problem_id, plan_enabled,
+                    resume_from, full_file, emit):
+    """Prove helper lemmas first; returns the proven-lemma bank to prepend.
+
+    Skipped on resume (the prior run already had its chance) and in full-file
+    mode (the model writes helpers itself). Only *proven* lemmas enter the
+    bank — never `sorry`.
+    """
+    lemma_bank = ""
+    if plan_enabled and not resume_from and not full_file:
+        try:
+            from .plan import propose_lemmas, prove_lemmas
+
+            proposed = propose_lemmas(signature, model_name=active_model)
+            emit("plan", proposed=[p[:80] for p in proposed])
+            proven = prove_lemmas(proposed, problem_id=problem_id, max_steps=8,
+                                  model_name=active_model)
+            emit("plan_lemmas", proven=[p[:80] for p in proven])
+            if proven:
+                lemma_bank = "\n\n".join(proven) + "\n\n"
+        except Exception:  # noqa: BLE001, S110 — planning is best-effort
+            pass
+    return lemma_bank
+
+
+def _build_retrieval_hints(*, signature, emit, retriever):
+    """Keyword hints from the local Mathlib index (PROVER_RETRIEVE=1)."""
+    retrieval_hints = ""
+    if os.getenv("PROVER_RETRIEVE") == "1":
+        try:
+            hits = retriever.search_lemmas(signature, k=5)
+        except Exception:  # noqa: BLE001 — retrieval is best-effort
+            hits = []
+        if hits:
+            # Corpus hits with a real proof body (LLM-verified tactics) are
+            # worth showing as worked examples — that's the cheapest way to
+            # teach the lemma/tactic style. Native-tag hits stay one-liners.
+            examples: list[str] = []
+            for h in hits:
+                if h.get("file") != "corpus" or not h.get("proof"):
+                    continue
+                if h["proof"].strip() in ("prover_finish", "prover_search"):
+                    continue
+                body = _proof_body(h["proof"])
+                if body:
+                    examples.append(f"{h['signature']} := by\n{body}")
+                if len(examples) >= 2:
+                    break
+            ex_block = ""
+            if examples:
+                ex_block = ("Worked examples of proofs this project has already "
+                            "verified (Lean-checked — imitate the style/lemmas):\n"
+                            + "\n\n".join(examples) + "\n\n")
+            retrieval_hints = (
+                "Relevant lemmas found by local keyword search "
+                "(name : signature):\n"
+                + "\n".join(
+                    f"- {h['name']} : {h['signature']}"
+                    + (f" — proven by {h['proof'].splitlines()[0].strip()}"
+                       if h.get("proof") and h["proof"].strip() in
+                       ("prover_finish", "prover_search") else "")
+                    for h in hits
+                )
+                + "\n\n" + ex_block
+            )
+            emit("retrieve", k=len(hits),
+                 lemmas=[h["name"] for h in hits],
+                 corpus=sum(1 for h in hits if h.get("file") == "corpus"))
+    return retrieval_hints
+
+
 def prove(
     statement: str,
     max_steps: int = 20,
@@ -261,7 +438,22 @@ def prove(
     lemma_plan: bool | None = None,
     full_file: bool = False,
     adaptive_steps: bool = False,
+    llm_client=None,
+    lean_runner=None,
+    lsp_factory=None,
+    retriever=None,
 ) -> Result:
+    from .ports import (
+        DefaultLeanLSPFactory,
+        DefaultLeanRunner,
+        DefaultLLMClient,
+        DefaultRetriever,
+    )
+
+    client = llm_client or DefaultLLMClient()
+    runner = lean_runner or DefaultLeanRunner()
+    lsp_factory = lsp_factory or DefaultLeanLSPFactory()
+    retriever = retriever or DefaultRetriever()
     t0 = time.time()
     lean_dir = _resolve_lean_dir()
     signature = _split_signature(statement)
@@ -281,7 +473,7 @@ def prove(
         model_name = cfg["model"]
         temperature = cfg.get("temperature", temperature)
         max_steps = cfg.get("max_steps", max_steps)
-    active_model = model_name or llm.model()
+    active_model = model_name or client.model()
 
     session = Session(problem_id=problem_id)
     session_open = session.open() if record_session else False
@@ -344,7 +536,7 @@ def prove(
         the loop feeds it back for retry and never records/commits a proof that
         is not audit-clean. The cheap regex scan always runs; the expensive
         kernel audit is skipped under PROVER_SKIP_AXIOM_AUDIT=1."""
-        proved, output = lean.check_file(target_file, lean_dir)
+        proved, output = runner.check_file(target_file, lean_dir)
         if not proved:
             return False, output
         from .validate import audit_file
@@ -363,7 +555,7 @@ def prove(
         if not goal_feedback:
             return None
         if lsp_client is None:
-            lsp_client = lsp.LeanLSP(lean_dir, target_file)
+            lsp_client = lsp_factory(lean_dir, target_file)
         try:
             current_text = HEADER + lemma_bank + content
             lsp_client.update(current_text)
@@ -383,9 +575,7 @@ def prove(
             and not resume_from
         ):
             try:
-                from .retrieval import corpus_append
-
-                corpus_append(lean_dir, statement, proof)
+                retriever.corpus_append(lean_dir, statement, proof)
             except Exception:  # noqa: BLE001, S110 — corpus growth is best-effort
                 pass
         emit(
@@ -410,9 +600,19 @@ def prove(
                 created_at=t0, updated_at=time.time(),
             ))
         return Result(
-            statement, proved, steps, secs, proof, history,
-            total_prompt, total_completion, total_tokens, cost, trace,
-            stopped, session_path,
+            statement=statement,
+            proved=proved,
+            steps=steps,
+            seconds=secs,
+            proof=proof,
+            history=history,
+            total_prompt_tokens=total_prompt,
+            total_completion_tokens=total_completion,
+            total_tokens=total_tokens,
+            estimated_cost_usd=cost,
+            trace=trace,
+            stopped=stopped,
+            session_path=session_path,
         )
 
     emit("start", statement=statement, problem_id=problem_id,
@@ -429,168 +629,26 @@ def prove(
     # Full-file mode is a structural rewrite; resume seeding is body-mode only.
     body = None  # initial proof body; seeded on resume
     if resume_from and not full_file:
-        records = []
-        for rec in manager.list_sessions():
-            if rec.id == resume_from:
-                records = read_session(Path(rec.path))
-                break
-        if records:
-            seed = history_from_records(records)
-            if branch_at is not None:
-                # branch_at = keep only the first N user/assistant turns,
-                # discarding the rest of the recorded trajectory
-                # (tau: repoint the LeafEntry at an earlier entry).
-                seed = seed[: max(0, branch_at) * 2]
-            if seed:
-                history = seed[:12]
-                if branch_summary:
-                    # Context for a continuation from an earlier point: what
-                    # the rest of the previous run already did (tau's
-                    # BRANCH_SUMMARY_PREAMBLE seeding).
-                    from .branch_summary import BRANCH_SUMMARY_PREAMBLE
-
-                    history.insert(0, {
-                        "role": "user",
-                        "content": f"{BRANCH_SUMMARY_PREAMBLE}\n{branch_summary}",
-                    })
-                last_asst = next(
-                    (m["content"] for m in reversed(seed)
-                     if m["role"] == "assistant" and m["content"].strip()
-                     and m["content"] != "(no response)"),
-                    None,
-                )
-                if last_asst:
-                    body = _extract_body(last_asst)
-                emit("resume", session_id=resume_from, seed_turns=len(seed) // 2,
-                     branch_at=branch_at)
+        history, body = _seed_resume(manager, resume_from, branch_at,
+                                     branch_summary, emit)
 
     # ---- Hammer pre-pass: try one-shot tactics before spending LLM tokens.
-    # Runs as a SINGLE Lean invocation: `prover_finish` executes the whole
-    # hammer chain natively (Lean-side), instead of spawning one `lake env
-    # lean` per hammer. If the ProverSupport olean isn't built (fresh clone,
-    # "unknown module prefix"), fall back to the per-hammer Python loop.
-    # PROVER_SEARCH=1 upgrades the pre-pass to `prover_search` (bounded
-    # native search, which includes the hammer chain) — opt-in, slower, but
-    # solves more problems without any LLM tokens.
-    # Skipped on resume and when the caller knows hammers already failed.
-    if body is None and not skip_hammers:
-        prepass = "prover_search" if os.environ.get("PROVER_SEARCH") else "prover_finish"
-        prepass_opts = ""
-        depths = ["3"]
-        budget = "1000"
-        if prepass == "prover_search":
-            raw_depths = os.environ.get("PROVER_SEARCH_DEPTH", "3")
-            depths = [d for d in raw_depths.split(",") if d.strip().isdigit()] or ["3"]
-            b = os.environ.get("PROVER_SEARCH_BUDGET", "1000")
-            budget = b if b.isdigit() else "1000"
-            prepass_opts = "set_option maxHeartbeats 0\n"
-            if budget != "1000":
-                prepass_opts += f"set_option prover_search.budget {budget}\n"
-        # Depth ramp (PROVER_SEARCH_DEPTH="3,4,5"): retry the whole search at
-        # each depth until something closes. Budget budget is shared per depth.
-        for d in depths:
-            tactic = f"prover_search {d}" if prepass == "prover_search" else "prover_finish"
-            write_file(prepass_opts + signature + "\n  " + tactic)
-            ok, output = check_file()
-            if ok:
-                emit("hammer", i=1, total=1, tactic=tactic, ok=True, output="")
-                return finish(True, 1, target_file.read_text(), 0.0)
-            if prepass != "prover_search":
-                break
-            if d != depths[-1]:
-                emit("hammer", i=int(d), total=len(depths), tactic=tactic,
-                     ok=False, output=output[-500:])
-        if "unknown module prefix 'ProverSupport'" not in output:
-            # native chain ran and failed — every hammer failed
-            emit("hammer", i=1, total=1, tactic=prepass, ok=False,
-                 output=output[-500:])
-        else:
-            # ProverSupport not built: per-hammer fallback loop
-            emit("hammer", i=1, total=len(HAMMERS) + 1, tactic=prepass,
-                 ok=False, output=output[-500:])
-            for i, hammer in enumerate(HAMMERS, 1):
-                if stop_requested():
-                    break
-                write_file(signature + "\n  " + hammer)
-                ok, output = check_file()
-                emit("hammer", i=i + 1, total=len(HAMMERS) + 1, tactic=hammer,
-                     ok=ok, output="" if ok else output[-500:])
-                if ok:
-                    return finish(True, i, target_file.read_text(), 0.0)
-        emit("llm_start")
-        body = "  sorry"  # placeholder so the first build reports sorry
-    if body is not None:
-        write_file(signature + "\n" + body)
-    elif not full_file:
-        body = "  sorry"
-        write_file(signature + "\n  sorry")
-    else:
-        write_file(content)  # full-file, no resume seed: initial `sorry` file
+    body, early = _hammer_prepass(
+        signature=signature, full_file=full_file, content=content,
+        skip_hammers=skip_hammers, body=body, target_file=target_file,
+        write_file=write_file, check_file=check_file, emit=emit,
+        stop_requested=stop_requested, finish=finish)
+    if early is not None:
+        return early
 
-    # ---- Lemma planning: prove helper lemmas first, prepend proven ones
-    # (PROVER_LEMMA_PLAN=1). Skipped on resume (the prior run already had its
-    # chance) and in full-file mode (the model writes helpers itself).
-    # Only *proven* lemmas enter the file — never `sorry`.
-    if plan_enabled and not resume_from and not full_file:
-        try:
-            from .plan import propose_lemmas, prove_lemmas
+    # ---- Lemma planning: prove helper lemmas first, prepend proven ones.
+    lemma_bank = _run_lemma_plan(
+        signature=signature, active_model=active_model, problem_id=problem_id,
+        plan_enabled=plan_enabled, resume_from=resume_from, full_file=full_file,
+        emit=emit)
 
-            proposed = propose_lemmas(signature, model_name=active_model)
-            emit("plan", proposed=[p[:80] for p in proposed])
-            proven = prove_lemmas(proposed, problem_id=problem_id, max_steps=8,
-                                  model_name=active_model)
-            emit("plan_lemmas", proven=[p[:80] for p in proven])
-            if proven:
-                lemma_bank = "\n\n".join(proven) + "\n\n"
-        except Exception:  # noqa: BLE001, S110 — planning is best-effort
-            pass
-
-    # ---- Lemma retrieval: keyword hints from the local Mathlib index
-    # (PROVER_RETRIEVE=1). Optional, offline, deterministic — never blocks
-    # the loop on the network.
-    retrieval_hints = ""
-    if os.getenv("PROVER_RETRIEVE") == "1":
-        try:
-            from .retrieval import search_lemmas
-
-            hits = search_lemmas(signature, k=5)
-        except Exception:  # noqa: BLE001 — retrieval is best-effort
-            hits = []
-        if hits:
-            # Corpus hits with a real proof body (LLM-verified tactics) are
-            # worth showing as worked examples — that's the cheapest way to
-            # teach the lemma/tactic style. Native-tag hits stay one-liners.
-            examples: list[str] = []
-            for h in hits:
-                if h.get("file") != "corpus" or not h.get("proof"):
-                    continue
-                if h["proof"].strip() in ("prover_finish", "prover_search"):
-                    continue
-                body = _proof_body(h["proof"])
-                if body:
-                    examples.append(f"{h['signature']} := by\n{body}")
-                if len(examples) >= 2:
-                    break
-            ex_block = ""
-            if examples:
-                ex_block = ("Worked examples of proofs this project has already "
-                            "verified (Lean-checked — imitate the style/lemmas):\n"
-                            + "\n\n".join(examples) + "\n\n")
-            retrieval_hints = (
-                "Relevant lemmas found by local keyword search "
-                "(name : signature):\n"
-                + "\n".join(
-                    f"- {h['name']} : {h['signature']}"
-                    + (f" — proven by {h['proof'].splitlines()[0].strip()}"
-                       if h.get("proof") and h["proof"].strip() in
-                       ("prover_finish", "prover_search") else "")
-                    for h in hits
-                )
-                + "\n\n" + ex_block
-            )
-            emit("retrieve", k=len(hits),
-                 lemmas=[h["name"] for h in hits],
-                 corpus=sum(1 for h in hits if h.get("file") == "corpus"))
+    # ---- Lemma retrieval: keyword hints from the local Mathlib index.
+    retrieval_hints = _build_retrieval_hints(signature=signature, emit=emit, retriever=retriever)
 
     base_max_steps = max_steps
     extensions = 0
@@ -601,16 +659,16 @@ def prove(
         while step < max_steps:
             step += 1
             if stop_requested():
-                return finish(False, step - 1, "", llm.estimate_cost(total_prompt, total_completion), stopped=True)
+                return finish(False, step - 1, "", client.estimate_cost(total_prompt, total_completion), stopped=True)
             ok, output = check_file()
-            diags = lean.parse_diagnostics(output)
+            diags = runner.parse_diagnostics(output)
             ndiag = len(diags)
             if ok:
                 emit("build", step=step, ok=True, diagnostics=0, summary="all goals solved")
                 return finish(True, step, target_file.read_text(),
-                              llm.estimate_cost(total_prompt, total_completion))
+                              client.estimate_cost(total_prompt, total_completion))
 
-            report = lean.error_report(lean_dir, output)
+            report = runner.error_report(lean_dir, output)
             emit("build", step=step, ok=False, diagnostics=ndiag,
                  summary=(diags[0].message if diags else "sorry / not proved"),
                  report=report[:4000])
@@ -667,7 +725,7 @@ def prove(
             extract_note = ""  # consumed
             history.append({"role": "user", "content": user_msg})
             emit("llm_request", step=step)
-            resp = llm.chat(system_prompt, history, temperature=temperature, model_name=active_model)
+            resp = client.chat(system_prompt, history, temperature=temperature, model_name=active_model)
             if resp.content.startswith("[LLM error"):
                 emit("llm_error", step=step, error=resp.content)
                 diag.log_llm_error(
@@ -736,7 +794,7 @@ def prove(
             # tau parity: if the estimated context crosses the auto-compaction
             # threshold (70% of the model's context window) without the turn
             # count having triggered yet, compact eagerly.
-            threshold = auto_compaction_threshold_for_context_window(llm.context_window_tokens())
+            threshold = auto_compaction_threshold_for_context_window(client.context_window_tokens())
             if summary is None and threshold and estimate_context_tokens(system_prompt, history) >= threshold:
                 history, summary = compact_history(history, keep_turns=8, compact_at_turns=14)
             if summary:
@@ -749,7 +807,7 @@ def prove(
             lsp_client.close()
         session.close()
 
-    return finish(False, max_steps, "", llm.estimate_cost(total_prompt, total_completion))
+    return finish(False, max_steps, "", client.estimate_cost(total_prompt, total_completion))
 
 
 def prove_best_of(
@@ -780,11 +838,61 @@ def prove_best_of(
     Each attempt gets its own session record; all results are kept on
     Result.attempts (index 0 = attempt 1).
     """
+    return _best_of_attempts(
+        prove,
+        statement,
+        n_attempts=n_attempts,
+        max_steps=max_steps,
+        verbose=verbose,
+        problem_id=problem_id,
+        goal_feedback=goal_feedback,
+        on_event=on_event,
+        should_stop=should_stop,
+        record_session=record_session,
+        skip_hammers=skip_hammers,
+        temperature=temperature,
+        temperature_delta=temperature_delta,
+        difficulty=difficulty,
+        model_name=model_name,
+        lemma_plan=lemma_plan,
+        full_file=full_file,
+        adaptive_steps=adaptive_steps,
+    )
+
+
+def _best_of_attempts(
+    prove_fn: Callable[..., Result],
+    statement: str,
+    *,
+    n_attempts: int = 1,
+    max_steps: int = 20,
+    verbose: bool = True,
+    problem_id: str | None = None,
+    goal_feedback: bool = True,
+    on_event: Callable[[dict], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    record_session: bool = True,
+    skip_hammers: bool = False,
+    temperature: float = 0.2,
+    temperature_delta: float = 0.4,
+    difficulty: str | None = None,
+    model_name: str | None = None,
+    lemma_plan: bool | None = None,
+    full_file: bool = False,
+    adaptive_steps: bool = False,
+) -> Result:
+    """Shared best-of-N driver; ``prove_fn`` is injected so the loop.py facade
+    can route through its own (monkeypatchable) ``prove`` without duplicating
+    this temperature-ramp body."""
     n = max(1, n_attempts)
     results: list[Result] = []
     for i in range(1, n + 1):
+        # Per-attempt cancellation: honour a stop request between attempts so
+        # a surface can halt a best-of-N search cleanly, not just mid-attempt.
+        if should_stop and should_stop():
+            break
         temp = temperature + temperature_delta * (i - 1)
-        r = prove(
+        r = prove_fn(
             statement,
             max_steps=max_steps,
             verbose=verbose,

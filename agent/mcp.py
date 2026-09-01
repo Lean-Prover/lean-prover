@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from pathlib import Path
 
 from .loop import Result
 
@@ -153,10 +154,23 @@ def _validate_args(name: str, args: dict) -> str | None:
     return None
 
 
+def _benchmark_path(rel_or_abs: str) -> Path | None:
+    """Resolve a benchmark problems path, requiring it under the repo's
+    ``benchmark/`` dir. Returns None (and thus a client-visible error) for
+    absolute/``..`` paths that escape it, so an MCP client cannot read
+    arbitrary JSON files on the host."""
+    root = Path(__file__).resolve().parent.parent
+    bench = (root / "benchmark").resolve()
+    try:
+        resolved = Path(rel_or_abs).expanduser().resolve()
+        resolved.relative_to(bench)
+        return resolved
+    except (ValueError, OSError):
+        return None
+
+
 def _handle_tool(name: str, args: dict) -> tuple[dict, bool]:
     """Run a tool; return (payload, is_error)."""
-    from pathlib import Path
-
     if name == "prove_theorem":
         from .loop import prove
 
@@ -173,9 +187,9 @@ def _handle_tool(name: str, args: dict) -> tuple[dict, bool]:
         return _result_json(r, statement), False
 
     if name == "benchmark_score":
-        problems_path = Path(args.get("problems", "benchmark/problems.json"))
-        if not problems_path.exists():
-            return {"error": f"problems file not found: {problems_path}"}, True
+        problems_path = _benchmark_path(args.get("problems", "benchmark/problems.json"))
+        if problems_path is None or not problems_path.exists():
+            return {"error": f"problems file not found (must be under benchmark/): {args.get('problems', 'benchmark/problems.json')}"}, True
         problems = json.loads(problems_path.read_text())[: int(args.get("limit", 5))]
         from .loop import prove
 
@@ -192,8 +206,8 @@ def _handle_tool(name: str, args: dict) -> tuple[dict, bool]:
         return {"score": solved, "total": len(results), "results": results}, False
 
     if name == "problems":
-        problems_path = Path("benchmark/problems.json")
-        if not problems_path.exists():
+        problems_path = _benchmark_path("benchmark/problems.json")
+        if problems_path is None or not problems_path.exists():
             return {"error": "benchmark/problems.json not found"}, True
         problems = json.loads(problems_path.read_text())
         tier = args.get("difficulty")
@@ -254,19 +268,20 @@ def _write_message(msg: dict) -> None:
 
 
 def _acl_denies(name: str, args: dict) -> bool:
-    """True when an explicit ACL deny rule matches (tool, serialized args).
+    """True when the permission ACL denies the call (tool, serialized args).
 
-    MCP tools stay open by default; only an explicit deny rule blocks a call,
-    so adding the ACL never breaks working tooling. Exact rules with patterns
-    are matched against the JSON-serialised arguments.
+    Uses the mode-aware :meth:`PermissionStore.check` so a user who configured
+    ``ask``/``auto``/``yolo`` gets that posture on the MCP surface too, not
+    just the local loop. Fails closed: any store/parse error denies rather
+    than silently reopening every tool.
     """
     try:
         from .permissions import PermissionStore
 
-        decision = PermissionStore().lookup(name, json.dumps(args, sort_keys=True))
+        decision = PermissionStore().check(name, json.dumps(args, sort_keys=True))
         return decision == "deny"
     except Exception:  # noqa: BLE001 — never let the ACL take the server down
-        return False
+        return True
 
 
 def serve() -> int:

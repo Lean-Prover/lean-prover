@@ -84,9 +84,11 @@ def estimate_context_usage(system: str, messages: list[dict | Any]) -> ContextUs
     system_tokens = estimate_text_tokens(system)
     message_tokens = sum(estimate_message_tokens(m) for m in messages)
     tool_tokens = sum(
-        estimate_text_tokens(str(getattr(m, "tool_name", "")) if hasattr(m, "tool_name") else str(m.get("name", "") if isinstance(m, dict) else "") + _message_text(m))
+        estimate_text_tokens(
+            str(m.get("name", "")) if isinstance(m, dict) else str(getattr(m, "tool_name", ""))
+        )
         for m in messages
-        if (hasattr(m, "tool_name") if not isinstance(m, dict) else m.get("role") == "tool")
+        if (m.get("role") == "tool" if isinstance(m, dict) else hasattr(m, "tool_name"))
     )
     total = system_tokens + message_tokens
     return ContextUsageEstimate(

@@ -7,11 +7,8 @@ tool-call events (Pi-style provider contract) instead of one blocking blob.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-import queue
-import threading
 from collections.abc import AsyncIterator
 
 from openai import OpenAI, Timeout
@@ -226,53 +223,42 @@ class OpenAICompatibleProvider:
                 ov_messages.append(converted)
         ov_tools = _convert_tools(tools)
 
-        chunks: queue.Queue[tuple[str, object]] = queue.Queue()
-        cancel_flag = threading.Event()
+        from ._bridge import StreamBridge
+
+        bridge = StreamBridge()
 
         def _run() -> None:
             try:
                 stream = self._client_for(model).chat.completions.create(
                     **self._request_kwargs(model, ov_messages, ov_tools))
                 for chunk in stream:
-                    if cancel_flag.is_set():
+                    if bridge.cancel_flag.is_set():
                         break
-                    chunks.put(("chunk", chunk))
-                chunks.put(("end", None))
+                    bridge.put("chunk", chunk)
+                bridge.put("end", None)
             except Exception as e:  # noqa: BLE001 — surfaced as AssistantErrorEvent
-                chunks.put(("error", e))
+                bridge.put("error", e)
 
-        threading.Thread(target=_run, daemon=True, name="llm-stream").start()
+        bridge.start(_run)
 
         partial = AssistantMessage(content=[], model=model,
                                    api="openai-compatible")
         started = False
-        errored = False
         finish_reason: str | None = None
         pending: dict[int, _PendingToolCall] = {}
-        poll = 0.2
 
         def _error(reason: str, message: str) -> AssistantErrorEvent:
-            nonlocal errored
-            errored = True
             stop = "aborted" if reason == "aborted" else "error"
             return AssistantErrorEvent(reason=reason, error=AssistantMessage(
                 content=list(partial.content), model=model, stop_reason=stop,
                 error_message=message))
 
         while True:
-            try:
-                kind, payload = await asyncio.to_thread(chunks.get, True, poll)
-            except queue.Empty:
-                if signal and signal.is_cancelled():
-                    cancel_flag.set()
-                    yield _error("aborted", "cancelled during stream")
-                    return
-                continue
-            except Exception:  # noqa: BLE001 — executor shutdown mid-stream
+            kind, payload = await bridge.next(signal)
+            if kind == "aborted":
+                yield _error("aborted", "cancelled during stream")
                 return
-
             if kind == "error":
-                cancel_flag.set()
                 yield _error("error", str(payload))
                 return
             if kind == "end":
@@ -331,9 +317,6 @@ class OpenAICompatibleProvider:
                         yield ToolCallDeltaEvent(delta=arg_delta,
                                                  content_index=slot.content_index,
                                                  partial=partial)
-
-        if errored:
-            return
 
         # Finalize: close the text block, then emit tool-call end events.
         if partial.content and isinstance(partial.content[0], TextContent):

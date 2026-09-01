@@ -12,7 +12,6 @@ from .flat import Session, list_sessions, read_session, sessions_dir
 from .jsonl import entries_from_json_lines, entry_to_json_line
 from .memory import InMemoryStorage
 from .storage import JsonlSessionStorage, SessionStorage
-from .tree import SessionTreeError, leaf_entry, path_to_entry
 
 __all__ = [
     "InMemoryStorage",
@@ -20,12 +19,9 @@ __all__ = [
     "Session",
     "SessionEntry",
     "SessionStorage",
-    "SessionTreeError",
     "entries_from_json_lines",
     "entry_to_json_line",
-    "leaf_entry",
     "list_sessions",
-    "path_to_entry",
     "read_session",
     "sessions_dir",
 ]

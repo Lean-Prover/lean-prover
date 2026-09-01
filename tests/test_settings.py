@@ -77,6 +77,18 @@ def test_bad_file_ignored(monkeypatch, tmp_path) -> None:
     assert settings.get("max_steps") == 20
 
 
+def test_wrong_typed_value_falls_back(monkeypatch, tmp_path) -> None:
+    """A valid-JSON-but-wrong-typed value must not crash the agent."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.delenv("PROVER_CONFIG_DIR", raising=False)
+    p = _write_user_settings(fake_home, json.dumps({"max_steps": "twenty"}))
+    assert p.exists()
+    # Wrong-typed value is ignored; falls back to the built-in default.
+    assert settings.get("max_steps") == 20
+
+
 def test_explicit_path_override(monkeypatch, tmp_path) -> None:
     p = tmp_path / "alt.json"
     p.write_text(json.dumps({"workers": 5}))

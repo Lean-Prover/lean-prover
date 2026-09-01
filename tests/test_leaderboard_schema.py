@@ -148,7 +148,7 @@ def test_leaderboard_run_records_versioned_entry(monkeypatch, tmp_path) -> None:
           "statement": "theorem t1 : True := by\n  sorry"}]))
     calls = []
 
-    def fake_prove_one(pd, ms, idx, total):
+    def fake_prove_one(pd, ms, idx, total, *a, **k):
         calls.append((pd["id"], ms))
         return {"id": pd["id"], "difficulty": pd["difficulty"],
                 "statement": pd["statement"], "statement_hash": "h",
@@ -184,7 +184,7 @@ def test_cmd_bench_refuses_drifted_frozen_set(monkeypatch, tmp_path, capsys) -> 
     sets.mkdir()
     (sets / "core.toml").write_text('problems = [{ id = "t1", revision = 2 }]\n')
     args = argparse.Namespace(problems=str(p), set="core", max_steps=20, start=1,
-                              parallel=1, no_goal_feedback=False, record=True,
+                              parallel=1, no_goal_feedback=False, no_record=False,
                               no_hammers=False, n_attempts=1, full_file=False,
                               adaptive=False, validate=False, report=None)
     assert main_mod.cmd_bench(args) == 1

@@ -115,6 +115,7 @@ _DEFAULT_CONTEXT_WINDOW_TOKENS = {
     "gemma": 128_000,
     "mistral": 128_000,
     "deepseek": 128_000,
+    "glm": 128_000,
 }
 DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000
 DEFAULT_COMPACTION_RESERVE_TOKENS = 16_384
@@ -193,8 +194,8 @@ def chat(
     retries: int = 4,
     model_name: str | None = None,
 ) -> LLMResponse:
-    """One LLM turn with a hard wall-clock cap and 429 backoff (tau_ai/retry.py)."""
-    from .provider_retry import retry_delay_seconds
+    """One LLM turn with a hard wall-clock cap and transient backoff (tau_ai/retry.py)."""
+    from .provider_retry import is_transient_error, retry_delay_seconds
 
     def run(result: _CallResult) -> None:
         try:
@@ -211,8 +212,9 @@ def chat(
             return LLMResponse(content=f"[LLM error: hard timeout after {HARD_TIMEOUT:.0f}s]")
         if result.error:
             msg = result.error
-            is_rate = "429" in msg or "rate limit" in msg.lower()
-            if is_rate and attempt < retries:
+            if is_transient_error(msg) and attempt < retries:
+                # Retry transient failures (429/5xx/connection/timeout) with
+                # exponential backoff + jitter; deterministic errors fail fast.
                 delay = retry_delay_seconds(attempt, max_delay_seconds=60.0)
                 time.sleep(delay)
                 continue

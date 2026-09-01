@@ -113,7 +113,7 @@ def test_requires_tool_name(tmp_path) -> None:
 
 
 def test_acl_denies_blocks_mcp_tool(monkeypatch, tmp_path) -> None:
-    """An explicit deny rule blocks an MCP tool call; open by default otherwise."""
+    """An explicit deny rule blocks an MCP tool call; ask mode fails closed."""
     from agent import mcp
 
     monkeypatch.setenv("PROVER_CONFIG_DIR", str(tmp_path))
@@ -121,7 +121,9 @@ def test_acl_denies_blocks_mcp_tool(monkeypatch, tmp_path) -> None:
     store.add_rule("prove_theorem", "", allow=False)
     store.save()
     assert mcp._acl_denies("prove_theorem", {"statement": "theorem t : True := by trivial"}) is True
-    assert mcp._acl_denies("problems", {}) is False
+    # ask is the default once a store exists: non-allowlisted tools are denied
+    # on the MCP surface too (fail-closed), matching the local loop gate.
+    assert mcp._acl_denies("problems", {}) is True
 
 
 def test_acl_denies_open_by_default(monkeypatch, tmp_path) -> None:
@@ -137,6 +139,7 @@ def test_acl_denies_pattern_match(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("PROVER_CONFIG_DIR", str(tmp_path))
     store = PermissionStore(path=tmp_path / "permissions.json")
     store.add_rule("prove_theorem", "hard", allow=False)
+    store.mode = "auto"  # non-denied tools stay open
     store.save()
     assert mcp._acl_denies("prove_theorem", {"statement": "a hard theorem"}) is True
     assert mcp._acl_denies("prove_theorem", {"statement": "an easy tree"}) is False
@@ -145,12 +148,13 @@ def test_acl_denies_pattern_match(monkeypatch, tmp_path) -> None:
 def test_acl_denies_never_crashes_server(monkeypatch, tmp_path) -> None:
     from agent import mcp
 
-    # A corrupt store must not raise through the MCP gate.
+    # A corrupt store must fail CLOSED (deny) rather than silently reopening
+    # every tool on the MCP surface.
     permissions = tmp_path / "permissions.json"
     permissions.parent.mkdir(parents=True, exist_ok=True)
     permissions.write_text("{not valid json]")
     monkeypatch.setenv("PROVER_CONFIG_DIR", str(tmp_path))
-    assert mcp._acl_denies("prove_theorem", {}) is False
+    assert mcp._acl_denies("prove_theorem", {}) is True
 
 
 # --------------------------------------------------------------------------- loop ACL gate (step C)

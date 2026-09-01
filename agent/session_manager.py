@@ -61,6 +61,23 @@ class SessionManager:
     def index_path(self) -> Path:
         return self.dir / "index.jsonl"
 
+    def _write_index_atomic(self, lines: list[str]) -> None:
+        """Atomically rewrite the index (temp file + fsync + rename)."""
+        payload = "\n".join(lines) + ("\n" if lines else "")
+        fd, tmp = tempfile.mkstemp(dir=self.dir, prefix=".index-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.index_path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
     def upsert(self, record: SessionRecord) -> None:
         """Insert or replace one session's index record (tau's _upsert).
 
@@ -79,28 +96,21 @@ class SessionManager:
                 except json.JSONDecodeError:
                     continue
         lines.append(record.to_json())
-        payload = "\n".join(lines) + "\n"
-        fd, tmp = tempfile.mkstemp(dir=self.dir, prefix=".index-")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(payload)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, self.index_path)
-        except BaseException:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+        self._write_index_atomic(lines)
 
     def touch(self, session_id: str, **fields: object) -> SessionRecord | None:
-        """Update fields of an existing record and bump updated_at."""
+        """Update mutable fields of an existing record and bump updated_at.
+
+        Only a whitelist of non-identity fields may change, so a caller can
+        never corrupt the index by rewriting ``id``/``path``/``created_at``
+        (which would break the upsert-by-id contract).
+        """
         record = self.get(session_id)
         if record is None:
             return None
+        mutable = ("title", "status", "proved", "steps")
         data = asdict(record)
-        data.update({k: v for k, v in fields.items() if k in data})
+        data.update({k: v for k, v in fields.items() if k in mutable})
         data["updated_at"] = time.time()
         updated = SessionRecord(**data)
         self.upsert(updated)
@@ -184,22 +194,33 @@ class SessionManager:
                     continue
                 lines.append(line)
             if dropped:
-                payload = "\n".join(lines) + ("\n" if lines else "")
-                fd, tmp = tempfile.mkstemp(dir=self.dir, prefix=".index-")
-                try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as f:
-                        f.write(payload)
-                        f.flush()
-                        os.fsync(f.fileno())
-                    os.replace(tmp, self.index_path)
-                    removed = True
-                except BaseException:
-                    try:
-                        os.unlink(tmp)
-                    except OSError:
-                        pass
-                    raise
+                self._write_index_atomic(lines)
+                removed = True
         return removed
+
+    def recover_interrupted(self) -> int:
+        """Mark sessions stuck in 'running' as failed (interrupted runs).
+
+        A killed process leaves a 'running' index record whose transcript has
+        a 'start' but no terminal 'result' event. Called at session-list time
+        so stale 'running' entries surface as failed instead of hanging
+        forever. Returns the number of sessions recovered.
+        """
+        recovered = 0
+        for rec in self.list_sessions():
+            if rec.status != "running":
+                continue
+            path = Path(rec.path)
+            has_result = False
+            if path.exists():
+                has_result = any(
+                    r.get("event") == "result" for r in sess.read_session(path)
+                )
+            if has_result:
+                continue
+            self.touch(rec.id, status="failed")
+            recovered += 1
+        return recovered
 
     @staticmethod
     def _problem_id_of(path: Path) -> str | None:

@@ -57,8 +57,15 @@ export OPENAI_API_KEY=not-needed
 export PROVER_MODEL=Qwen/Qwen3.8-27B
 ```
 
+**Particle AI:**
+```bash
+export OPENAI_BASE_URL=https://api.particle.ai/v1
+export OPENAI_API_KEY=<your particle key>
+export PROVER_MODEL=glm-5.3-flash
+```
+
 Put these in `~/.bashrc` or a `.env` you source. Any OpenAI-compatible
-endpoint works (DashScope, OpenRouter, Groq, local Ollama/vLLM).
+endpoint works (DashScope, OpenRouter, Groq, Particle AI, local Ollama/vLLM).
 
 ---
 
@@ -191,8 +198,9 @@ Files:
 - `agent/terminal_title.py` — terminal tab title + braille spinner while running
 - `agent/terminal_notification.py` — OSC 9/99 desktop notification on run end
 - `agent/session_stats.py` — per-session token/step/cost totals
-- `agent/tui.py` — Textual TUI (browse problems, live proof trace, replay, commands)
-- `agent/main.py` — CLI (`prove` / `bench` / `tui` / `mcp` / `sessions` / `leaderboard`)
+- `agent/tui/` — Textual TUI package (`app.py`, `screens.py`, `handlers.py`, `.tcss`)
+- `agent/main.py` — CLI entry facade; `agent/cli/` holds the command registry
+  (`prove` / `bench` / `tui` / `mcp` / `sessions` / `leaderboard`)
 
 ## 5b. The TUI
 

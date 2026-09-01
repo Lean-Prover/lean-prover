@@ -66,6 +66,29 @@ def test_touch_updates_fields_and_bumps_time(tmp_path: Path) -> None:
     assert manager.get("s-one").status == "failed"
 
 
+def test_recover_interrupted_marks_running_without_result_as_failed(tmp_path: Path) -> None:
+    import json
+
+    manager = SessionManager(sessions_dir=tmp_path)
+    # Interrupted: running record whose transcript has start but no result.
+    interrupted = _record(tmp_path, "interrupted", 100.0, status="running")
+    manager.upsert(interrupted)
+    Path(interrupted.path).write_text(
+        json.dumps({"event": "start", "statement": "s"}) + "\n"
+    )
+    # Completed: running record but the transcript does have a result event.
+    done = _record(tmp_path, "done", 101.0, status="running")
+    manager.upsert(done)
+    Path(done.path).write_text(
+        json.dumps({"event": "start", "statement": "s"}) + "\n"
+        + json.dumps({"event": "result", "proved": True}) + "\n"
+    )
+
+    assert manager.recover_interrupted() == 1
+    assert manager.get("interrupted").status == "failed"
+    assert manager.get("done").status == "running"
+
+
 def test_touch_unknown_returns_none(tmp_path: Path) -> None:
     manager = SessionManager(sessions_dir=tmp_path)
     assert manager.touch("nope", status="proved") is None
