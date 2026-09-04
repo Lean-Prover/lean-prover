@@ -1,0 +1,82 @@
+[
+  {
+    "id": "kinematics_v_sq",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_kinematics_v_sq (v0 a t : ℝ) :\n  (v0 + a * t) ^ 2 - v0 ^ 2 = 2 * a * t * v0 + (a * t) ^ 2 := by\n  sorry"
+  },
+  {
+    "id": "kinematics_x",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_kinematics_x (x0 v0 t : ℝ) :\n  (x0 + v0 * t) - v0 * t = x0 := by\n  sorry"
+  },
+  {
+    "id": "dynamics_fma_comm",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_dynamics_fma_comm (m a F : ℝ) (h : F = m * a) :\n  a * m = F := by\n  sorry"
+  },
+  {
+    "id": "dynamics_accel",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_dynamics_accel (m F a : ℝ) (hm : m ≠ 0) (h : F = m * a) :\n  a = F / m := by\n  sorry"
+  },
+  {
+    "id": "energy_ke_momentum",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_energy_ke_momentum (m v p : ℝ) (hm : m ≠ 0) (hp : p = m * v) :\n  (1 / 2) * m * v ^ 2 = p ^ 2 / (2 * m) := by\n  sorry"
+  },
+  {
+    "id": "energy_work_fma",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_energy_work_fma (F d m a W : ℝ) (hW : W = F * d) (hF : F = m * a) :\n  W = m * a * d := by\n  sorry"
+  },
+  {
+    "id": "circuit_ohm_power",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_circuit_ohm_power (V I R P : ℝ) (hV : V = I * R) (hP : P = V * I) :\n  P = I ^ 2 * R := by\n  sorry"
+  },
+  {
+    "id": "circuit_parallel",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_circuit_parallel (R1 R2 Rp : ℝ) (h : Rp = (R1 * R2) / (R1 + R2)) :\n  Rp * (R1 + R2) = R1 * R2 := by\n  sorry"
+  },
+  {
+    "id": "circuit_power_v",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_circuit_power_v (V I R P : ℝ) (hV : V = I * R) (hP : P = V * I) :\n  P * R = V ^ 2 := by\n  sorry"
+  },
+  {
+    "id": "wave_freq",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_wave_freq (v f lam : ℝ) (hf : f ≠ 0) (h : v = f * lam) :\n  lam = v / f := by\n  sorry"
+  },
+  {
+    "id": "gravitation",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_gravitation (G m1 m2 r F : ℝ) (hr : r ≠ 0) (h : F = G * m1 * m2 / r ^ 2) :\n  F * r ^ 2 = G * m1 * m2 := by\n  sorry"
+  },
+  {
+    "id": "centripetal",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_centripetal (v r ac : ℝ) (hr : r ≠ 0) (h : ac = v ^ 2 / r) :\n  ac * r = v ^ 2 := by\n  sorry"
+  },
+  {
+    "id": "kepler_third",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_kepler_third (G M r T p : ℝ) (hGM : G * M ≠ 0) (h : T ^ 2 = 4 * p ^ 2 * r ^ 3 / (G * M)) :\n  T ^ 2 * (G * M) = 4 * p ^ 2 * r ^ 3 := by\n  sorry"
+  },
+  {
+    "id": "kinetic_2ke",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_kinetic_2ke (m v KE : ℝ) (h : KE = (1 / 2) * m * v ^ 2) :\n  2 * KE = m * v ^ 2 := by\n  sorry"
+  },
+  {
+    "id": "spring_energy",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_spring_energy (k x PE : ℝ) (h : PE = (1 / 2) * k * x ^ 2) :\n  2 * PE = k * x ^ 2 := by\n  sorry"
+  },
+  {
+    "id": "momentum_shift",
+    "difficulty": "physics",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_momentum_shift (m1 v1 m2 v2 : ℝ) :\n  (m1 * v1 + m2 * v2) - m2 * v2 = m1 * v1 := by\n  sorry"
+  }
+]

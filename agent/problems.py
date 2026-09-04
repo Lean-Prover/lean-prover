@@ -52,8 +52,11 @@ def _from_dict(d: dict) -> Problem:
     for key in ("id", "difficulty", "statement"):
         if not d.get(key):
             raise ValueError(f"problem missing required field {key!r}: {d}")
-    if d["difficulty"] not in DIFFICULTIES:
-        raise ValueError(f"problem {d['id']}: unknown difficulty {d['difficulty']!r}")
+    # Difficulty is a free-form string. Canonical tiers are
+    # trivial/easy/medium/hard (DIFFICULTIES), but source-specific sets
+    # (MiniF2F, Putnam, FormalQual importers) emit their own values, e.g.
+    # "minif2f_test". The router falls back to defaults for unknown tiers,
+    # so any non-empty difficulty is valid here.
     rev = d.get("statement_revision", 1)
     if not isinstance(rev, int) or rev < 1:
         raise ValueError(f"problem {d['id']}: statement_revision must be a positive int")

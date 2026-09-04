@@ -9,7 +9,7 @@ type-checks. Ends with ∎
 Working agent, 100-problem benchmark, interactive TUI, MCP server,
 session resume/branching, history compaction, theming, best-of-N search,
 local Mathlib retrieval, autoformalization, synthetic data tooling.
-Current best: **Qwen3.8-27B on Mathlib v4.20.0 scores 68/100**
+Current best: **Qwen3.8-27B on Mathlib v4.33.0 scores 68/100**
 (trivial 20/20, easy 23/30, medium 21/30, hard 4/20), $0 cost (free HF endpoint).
 Live leaderboard + org site: **http://100.96.13.61:8899** (self-hosted on Tailscale, repo `lean-prover-web`).
 
@@ -56,7 +56,9 @@ export PROVER_MODEL=big-pickle
 ```bash
 # Prove a single theorem interactively (edits lean/src/Prover.lean)
 prover prove "theorem pythagoras (a b c : ℕ) : a ^ 2 + b ^ 2 = c ^ 2 ↔ a = 0" --max-steps 20
+# Best-of-N search + beam/tree search over the repair loop
 prover prove "..." --n-attempts 3      # best-of-N (temperature ramp per attempt)
+prover search --problems benchmark/problems.json --beam 3 --limit 5   # beam search
 prover prove "..." --full-file         # model writes the whole Lean file (helpers/imports);
                                        # the theorem statement is still enforced
 prover prove "..." --adaptive          # extend the step budget when making progress
@@ -69,6 +71,14 @@ prover synth-data --count 20 --out synth.jsonl   # train file: synth_train.jsonl
 
 # Import a standard benchmark (MiniF2F Lean4 port) + type-check it
 python benchmark/import_standard.py minif2f --src <miniF2F-lean4 checkout> --split test --verify
+
+# Physics benchmarks (32 physics-motivated theorems across two tiers:
+# physics.json = kinematics/dynamics/energy/circuits/waves/gravitation;
+# physics_hard.json = projectile/rotation/fluids/thermo/optics/magnetism —
+# all type-check on Mathlib v4.33.0). Hammer-only floor: 31/32 solved by
+# `prover_finish` with no LLM; only `circuit_parallel` (division) needs a model.
+prover bench --problems benchmark/physics.json --max-steps 20
+prover bench --problems benchmark/physics_hard.json --max-steps 20
 prover bench --problems benchmark/minif2f_test.json
 
 # Interactive TUI: browse problems, watch live repairs, slash commands
@@ -117,6 +127,8 @@ prover leaderboard --show
 
 # Use lean-prover from any MCP client (Claude, opencode, Cursor, …)
 prover mcp    # JSON-RPC tools: prove_theorem, benchmark_score, problems
+# …or from ACP editors (Zed, Devin Desktop, CodeCompanion, …)
+prover acp    # Agent Client Protocol stdio server (session-based prove)
 
 # No-LLM baseline: how many problems Lean itself solves (one `lake env lean` per problem)
 prover lean-baseline --tactic prover_finish --out benchmark/lean_baseline.json
@@ -129,6 +141,12 @@ prover synth-lean --report benchmark/lean_baseline.json --out corpus/lean_proved
 prover datagen --out benchmark/train_sft.jsonl
 # Writes {"system", "instruction": <theorem>, "output": "```lean\n  <tactic>\n```"} entries.
 # Run this as the loop proof more problems — the corpus auto-grows during proving.
+
+# GRPO-ready verifier-reward rollouts (prompt + per-attempt completions + binary Lean reward)
+prover rl-data --problems benchmark/problems.json --n-attempts 3 --out benchmark/train_grpo.jsonl
+# Writes TRL-style groups: {"id", "prompt", "completions": [...], "rewards": [0/1...]}.
+# Reward = the Lean verifier gate (same `lake env lean` the loop uses). Actual
+# GRPO fine-tune needs a trainable/GPU policy model — see agent/finetune.py.
 
 # Tests
 pytest tests/        # 404 tests (loop, compaction, session, TUI, commands, baselines)
@@ -177,9 +195,17 @@ best-effort — a failure never breaks the loop):
 - **Best-of-N** (`--n-attempts`): independent repair trajectories with a
   temperature ramp; hammers run once (they are deterministic); returns the
   first proof, else the attempt that got furthest.
+- **Beam/tree search** (`prover search --beam N`): keeps a frontier of the N
+  most promising proof states, expanding each with the LLM+Lean repair step
+  and pruning dead ends by a progress heuristic (fewer diagnostics / open
+  goals) — concentrates budget on promising paths instead of equal budget
+  per trajectory.
 - **Lemma retrieval** (`PROVER_RETRIEVE=1`): keyword index over ~150k Mathlib
   lemma signatures; the top-5 for the target statement are fed to the model
-  as hints (no embeddings, no network).
+  as hints (no embeddings, no network). Neural variant (`PROVER_EMBED=1`,
+  `PROVER_EMBED_MODEL=<embedding-model>`): embedding cosine-similarity over a
+  cached index, falling back to keyword when the endpoint serves no
+  `/embeddings`.
 - **Lemma planning** (`PROVER_LEMMA_PLAN=1`): the model proposes ≤3 helper
   lemmas, each is statement-checked and proven by a bounded sub-loop, and
   only *proven* helpers are prepended above the main theorem (never `sorry`).
@@ -199,6 +225,7 @@ best-effort — a failure never breaks the loop):
 ```
 lean/               Lean 4 package (lake), Mathlib pinned to v4.33.0
   src/Prover.lean   target file the agent edits
+  src/Physics/      dimensional-analysis layer (Dimension + Quantity, type-enforced units)
   tmp/              per-problem files (benchmark isolation)
 agent/              the agent (Python)
   loop.py           repair loop + hammer pre-pass + resume/branch
@@ -216,6 +243,8 @@ agent/              the agent (Python)
   plan.py           lemma-bank planning (prove helpers before the main theorem)
   synth.py          synthetic proof corpus generation (JSONL + train split)
   mcp.py            MCP server (expose prove_theorem to any agent)
+  acp.py            ACP server (session-based prove for editors)
+  search.py         beam/tree search over the repair loop (progress-pruned frontier)
   commands.py       slash-command registry (tau pattern, 22 built-ins)
   paths.py          canonical user/project dir config (env overrides)
   context_window.py token-based context estimation + auto-compaction threshold
@@ -267,21 +296,24 @@ leaderboard.json    local score history (prover leaderboard; served by lean-prov
 - [x] Lemma-bank planning (`PROVER_LEMMA_PLAN=1`, proven-helpers-first)
 - [x] Synthetic data + expert-iteration corpus (`prover synth-data`)
 - [x] MiniF2F benchmark import + type-check (`benchmark/import_standard.py`)
-- [x] LSP `runTactic` primitive (RPC only present on Lean ≥ v4.22; returns None on our pinned v4.20 — verified against the real server)
+- [x] LSP `runTactic` primitive (RPC present on Lean ≥ v4.22; available on our pinned v4.33.0)
 - [x] Full-file dynamic mode (`--full-file`: model writes whole files; statement enforced) + adaptive step budget (`--adaptive`)
 
 ## Not yet verified / deferred (honest scope)
 
 - Live-model verification of best-of-N, retrieval, planning, routing and
-  formalize is **blocked**: the configured HF backup endpoint answers
-  `/models` but hangs on `/chat/completions` (serverless queue stall). Unit
-  tests pass; end-to-end model runs need a working endpoint.
-- The `runTactic` RPC does not exist in the pinned Lean v4.20.0 toolchain
-  (added in later Lean); the primitive is unit-tested and degrades to `None`.
-- Full MiniF2F score (244 test problems) has not been run through the agent —
-  the statements are type-checked (244/244 compile on Mathlib v4.20.0) but
-  proving them is a long model run.
-- Mathlib bump to `v4.34` (`grind` tactic) + toolchain `v4.20→v4.34`, real RL fine-tuning, and upstream contributions are deferred.
+  formalize is **unblocked** as of 2026-09-04: the active OpenCode Zen endpoint
+  (`https://opencode.ai/zen/v1`) answers `/chat/completions` and the full
+  repair loop has been verified end-to-end (a theorem proved through the LLM
+  loop, $0 cost). The earlier "HF backup endpoint hangs" blocker no longer
+  applies to the configured endpoint.
+- The `runTactic` RPC exists on the pinned Lean v4.33.0 toolchain (added in
+  Lean v4.22); the primitive is unit-tested but needs live re-verification.
+- Full MiniF2F test run (244 problems) **completed 2026-09-04**: **83/244**
+  (34%), all proved proofs validator-checked, $0 cost, 4916 tokens, parallel-4.
+  Report: `benchmark/minif2f_report.json`. (Statements all type-check on
+  Mathlib v4.33.0.)
+- Mathlib v4.33.0 landed (`grind` tactic available and used as the strongest hammer). The verifier-reward RL *data* pipeline (`prover rl-data`) is in; actual GRPO fine-tuning is deferred — it needs a trainable/GPU policy model this box lacks (see `agent/finetune.py`). Upstream contributions are deferred.
 
 ## Model profiles (`/models` in the TUI)
 

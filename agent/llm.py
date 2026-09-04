@@ -65,6 +65,28 @@ def model() -> str:
     return models.resolved_model_name()
 
 
+def embed(texts: list[str], model_name: str | None = None) -> list[list[float]] | None:
+    """Embed `texts` via an OpenAI-compatible ``/embeddings`` endpoint.
+
+    Returns one vector per input (ordered by index), or None when the
+    endpoint does not serve embeddings (many chat-only endpoints 404/HTML
+    on ``/embeddings``). Callers MUST treat None as "neural retrieval
+    unavailable — fall back to keyword". The embedding model defaults to
+    ``PROVER_EMBED_MODEL`` (an embeddings model, e.g. ``text-embedding-3``)
+    and falls back to the active chat model.
+    """
+    emb_model = model_name or os.environ.get("PROVER_EMBED_MODEL") or model()
+    try:
+        resp = client(emb_model).embeddings.create(model=emb_model, input=texts)
+    except Exception:  # noqa: BLE001 — best-effort; None means "no embeddings here"
+        return None
+    data = getattr(resp, "data", None)
+    if not data:
+        return None
+    data = sorted(data, key=lambda d: getattr(d, "index", 0))
+    return [d.embedding for d in data]
+
+
 def available_models(timeout: float = 15.0) -> list[str]:
     """Model names the configured endpoint actually serves (subject to its
     own request/timeout behavior). Empty when no endpoint is configured, the

@@ -22,6 +22,22 @@ LEADERBOARD_SOLVER = "prove_best_of"
 DEFAULT_SET = "core"
 
 
+def _resolve_set_name(problems_path: str, set_name: str | None) -> str | None:
+    """Resolve which frozen set to drift-check, or None to skip the check.
+
+    An explicit ``--set`` always wins. Otherwise the default ``core`` set
+    only applies when running the core benchmark file; other problem sets
+    (MiniF2F, Putnam, FormalQual) are outside the core set's scope, so the
+    check is skipped rather than falsely reporting every pin as drifted.
+    """
+    if set_name:
+        return set_name
+    from pathlib import Path as _Path
+    if _Path(problems_path).resolve() == _Path("benchmark/problems.json").resolve():
+        return DEFAULT_SET
+    return None
+
+
 def provenance(problems_path: str | None = None) -> dict:
     """Run-provenance stamps for leaderboard/report entries (lean-eval style).
 
@@ -175,11 +191,12 @@ def _leaderboard_run(args: argparse.Namespace) -> int:
     from ..problems import active_problems, load_problems
 
     problems_all = load_problems(args.problems)
-    drifted = _check_frozen_set(args.problems, getattr(args, "set", DEFAULT_SET),
-                                problems_all)
-    if drifted:
-        _report_drift(drifted, getattr(args, "set", DEFAULT_SET))
-        return 1
+    set_name = _resolve_set_name(args.problems, getattr(args, "set", None))
+    if set_name is not None:
+        drifted = _check_frozen_set(args.problems, set_name, problems_all)
+        if drifted:
+            _report_drift(drifted, set_name)
+            return 1
 
     problems = [p.as_dict() for p in active_problems(problems_all)]
     results, _tokens, _cost = _m._run_problems(problems, args.max_steps, quiet=True)

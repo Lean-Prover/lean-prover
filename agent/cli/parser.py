@@ -70,8 +70,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     b = sub.add_parser("bench", help="run the benchmark suite")
     b.add_argument("--problems", default="benchmark/problems.json")
-    b.add_argument("--set", default=_m.DEFAULT_SET,
-                   help="frozen set to drift-check against (benchmark/sets/<name>.toml)")
+    b.add_argument("--set", default=None,
+                   help="frozen set to drift-check against (benchmark/sets/<name>.toml); "
+                        "defaults to 'core' only when running the core benchmark")
     b.add_argument("--max-steps", type=int, default=proj_max_steps)
     b.add_argument("--start", type=int, default=1, help="resume from problem N (1-indexed)")
     b.add_argument("--report", default=None)
@@ -94,6 +95,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     m = sub.add_parser("mcp", help="run the MCP (Model Context Protocol) stdio server")
     m.set_defaults(fn=_m.cmd_mcp)
+
+    a = sub.add_parser("acp", help="run the ACP (Agent Client Protocol) stdio server for editors")
+    a.set_defaults(fn=_m.cmd_acp)
 
     f = sub.add_parser("formalize", help="autoformalize a natural-language statement to Lean")
     f.add_argument("statement", help="natural-language math statement to formalize")
@@ -145,6 +149,27 @@ def _build_parser() -> argparse.ArgumentParser:
                          "reports under benchmark/")
     dg.add_argument("--out", default="benchmark/train_sft.jsonl")
     dg.set_defaults(fn=_m.cmd_datagen)
+
+    rd = sub.add_parser("rl-data",
+                        help="generate GRPO-ready verifier-reward rollouts "
+                             "(prompt + per-attempt completions + binary Lean reward)")
+    rd.add_argument("--problems", default="benchmark/problems.json")
+    rd.add_argument("--out", default="benchmark/train_grpo.jsonl")
+    rd.add_argument("--n-attempts", type=int, default=3,
+                    help="rollouts (attempts) per problem")
+    rd.add_argument("--max-steps", type=int, default=20)
+    rd.add_argument("--limit", type=int, default=None,
+                    help="only process first N problems")
+    rd.set_defaults(fn=_m.cmd_rldata)
+
+    sr = sub.add_parser("search",
+                        help="beam/tree search over the repair loop (progress-pruned frontier)")
+    sr.add_argument("--problems", default="benchmark/problems.json")
+    sr.add_argument("--beam", type=int, default=3, help="beam width (frontier size)")
+    sr.add_argument("--max-steps", type=int, default=20)
+    sr.add_argument("--limit", type=int, default=None)
+    sr.add_argument("--out", default="benchmark/search_report.json")
+    sr.set_defaults(fn=_m.cmd_search)
 
     ft = sub.add_parser("finetune",
                         help="LoRA data prep (--prepare, default) or Lean fidelity "
@@ -212,8 +237,9 @@ def _build_parser() -> argparse.ArgumentParser:
     lb.add_argument("--run", action="store_true",
                     help="run the benchmark first, then record the score")
     lb.add_argument("--problems", default="benchmark/problems.json")
-    lb.add_argument("--set", default=_m.DEFAULT_SET,
-                    help="frozen set to drift-check against (benchmark/sets/<name>.toml)")
+    lb.add_argument("--set", default=None,
+                    help="frozen set to drift-check against (benchmark/sets/<name>.toml); "
+                         "defaults to 'core' only when running the core benchmark")
     lb.add_argument("--max-steps", type=int, default=proj_max_steps)
     lb.add_argument("--name", default=None, help="entry name (default: model or env)")
     lb.add_argument("--show", action="store_true", help="only show current leaderboard")

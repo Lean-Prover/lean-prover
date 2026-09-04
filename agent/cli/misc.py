@@ -13,6 +13,12 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     return serve()
 
 
+def cmd_acp(args: argparse.Namespace) -> int:
+    from ..acp import serve
+
+    return serve()
+
+
 def cmd_formalize(args: argparse.Namespace) -> int:
     from ..formalize import formalize
 
@@ -86,6 +92,27 @@ def cmd_datagen(args: argparse.Namespace) -> int:
     for r in args.report:
         argv += ["--report", r]
     return datagen_main(argv)
+
+
+def cmd_rldata(args: argparse.Namespace) -> int:
+    from ..rldata import main as rldata_main
+
+    argv = ["--problems", args.problems, "--out", args.out,
+            "--n-attempts", str(args.n_attempts),
+            "--max-steps", str(args.max_steps)]
+    if args.limit is not None:
+        argv += ["--limit", str(args.limit)]
+    return rldata_main(argv)
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    from ..search import main as search_main
+
+    argv = ["--problems", args.problems, "--out", args.out,
+            "--beam", str(args.beam), "--max-steps", str(args.max_steps)]
+    if args.limit is not None:
+        argv += ["--limit", str(args.limit)]
+    return search_main(argv)
 
 
 def cmd_finetune(args: argparse.Namespace) -> int:

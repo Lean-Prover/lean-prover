@@ -1,0 +1,82 @@
+[
+  {
+    "id": "projectile_time",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_projectile_time (v0 g : ℝ) (θ : ℝ) (hg : g ≠ 0) :\n  (2 * v0 * Real.sin θ / g) * g = 2 * v0 * Real.sin θ := by\n  sorry"
+  },
+  {
+    "id": "rotational_torque",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_rotational_torque (I α τ : ℝ) (h : τ = I * α) :\n  I * α = τ := by\n  sorry"
+  },
+  {
+    "id": "rotational_ke",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_rotational_ke (I ω KE : ℝ) (h : KE = (1 / 2) * I * ω ^ 2) :\n  2 * KE = I * ω ^ 2 := by\n  sorry"
+  },
+  {
+    "id": "angular_momentum",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_angular_momentum (I ω L : ℝ) (h : L = I * ω) :\n  I * ω = L := by\n  sorry"
+  },
+  {
+    "id": "fluid_continuity",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_fluid_continuity (A1 v1 A2 v2 : ℝ) (hA2 : A2 ≠ 0) (h : A1 * v1 = A2 * v2) :\n  A1 * v1 / A2 = v2 := by\n  sorry"
+  },
+  {
+    "id": "gas_combined",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_gas_combined (P1 V1 T1 P2 V2 T2 : ℝ) (hT1 : T1 ≠ 0) (hT2 : T2 ≠ 0) (h : P1 * V1 / T1 = P2 * V2 / T2) :\n  P1 * V1 * T2 = P2 * V2 * T1 := by\n  sorry"
+  },
+  {
+    "id": "first_law",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_first_law (Q W dU : ℝ) (h : dU = Q - W) :\n  Q = dU + W := by\n  sorry"
+  },
+  {
+    "id": "capacitor_energy",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_capacitor_energy (C V E : ℝ) (h : E = (1 / 2) * C * V ^ 2) :\n  2 * E = C * V ^ 2 := by\n  sorry"
+  },
+  {
+    "id": "lens_equation",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_lens_equation (f d0 di : ℝ) (hf : f ≠ 0) (hd0 : d0 ≠ 0) (hdi : di ≠ 0) (h : 1 / f = 1 / d0 + 1 / di) :\n  f * (d0 + di) = d0 * di := by\n  sorry"
+  },
+  {
+    "id": "snell_law",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_snell_law (n1 n2 : ℝ) (θ1 θ2 : ℝ) (hn2 : n2 ≠ 0) (h : n1 * Real.sin θ1 = n2 * Real.sin θ2) :\n  n1 * Real.sin θ1 / n2 = Real.sin θ2 := by\n  sorry"
+  },
+  {
+    "id": "magnetic_force",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_magnetic_force (F q v B : ℝ) (hq : q ≠ 0) (hB : B ≠ 0) (h : F = q * v * B) :\n  F / (q * B) = v := by\n  sorry"
+  },
+  {
+    "id": "doppler",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_doppler (f v vo vs f' : ℝ) (hv : v ≠ vs) (h : f' = f * (v + vo) / (v - vs)) :\n  f' * (v - vs) = f * (v + vo) := by\n  sorry"
+  },
+  {
+    "id": "shm_omega",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_shm_omega (ω k m T : ℝ) (hω : ω ≠ 0) (h : ω = Real.sqrt (k / m)) (hT : T = 2 * Real.pi / ω) :\n  T * ω = 2 * Real.pi := by\n  sorry"
+  },
+  {
+    "id": "thermal_expansion",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_thermal_expansion (L0 α dT L : ℝ) (h : L = L0 * (1 + α * dT)) :\n  L - L0 = L0 * α * dT := by\n  sorry"
+  },
+  {
+    "id": "power_fma",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_power_fma (P F v m a : ℝ) (hP : P = F * v) (hF : F = m * a) :\n  P = m * a * v := by\n  sorry"
+  },
+  {
+    "id": "kinetic_work",
+    "difficulty": "physics_hard",
+    "statement": "set_option maxHeartbeats 0\nopen BigOperators Real\n\ntheorem prover_kinetic_work (m v1 v2 W : ℝ) (h : W = (1 / 2) * m * (v2 ^ 2 - v1 ^ 2)) :\n  2 * W = m * (v2 ^ 2 - v1 ^ 2) := by\n  sorry"
+  }
+]

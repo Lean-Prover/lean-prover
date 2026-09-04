@@ -111,6 +111,51 @@ def test_enabled_flag(monkeypatch) -> None:
     assert retrieval.enabled() is False
     monkeypatch.setenv("PROVER_RETRIEVE", "1")
     assert retrieval.enabled() is True
+    monkeypatch.delenv("PROVER_RETRIEVE")
+    monkeypatch.setenv("PROVER_EMBED", "1")
+    assert retrieval.enabled() is True
+
+
+# ---- neural (embedding) retrieval ----
+
+_VOCAB = ["prime", "gcd", "fib", "mul", "dvd", "nat", "add", "comm"]
+
+
+def _stub_embed(texts: list[str]) -> list[list[float]] | None:
+    """Deterministic bag-of-words vectors over _VOCAB (offline stub)."""
+    return [[1.0 if w in t.lower() else 0.0 for w in _VOCAB] for t in texts]
+
+
+def test_cosine_similarity() -> None:
+    import pytest as _pytest
+
+    a = [1.0, 0.0, 1.0]
+    assert retrieval._cosine(a, a) == _pytest.approx(1.0)
+    assert retrieval._cosine(a, [0.0, 1.0, 0.0]) == _pytest.approx(0.0)
+    # orthogonal and same-length: similarity is normalized
+    assert 0.0 < retrieval._cosine([1.0, 1.0], [1.0, 0.0]) < 1.0
+
+
+def test_search_lemmas_embed_ranks_by_similarity(tmp_path: Path, monkeypatch) -> None:
+    write_mathlib(tmp_path, FILES)
+    monkeypatch.setenv("PROVER_EMBED", "1")
+    # gcd_mul_lcm mentions gcd/mul/nat; the query shares those tokens.
+    hits = retrieval.search_lemmas_embed(
+        "Nat.gcd a b * Nat.lcm a b = a * b", k=3, lean_dir=tmp_path, embed=_stub_embed)
+    assert hits and hits[0]["name"] == "gcd_mul_lcm"
+
+
+def test_search_lemmas_embed_unavailable_falls_back_to_keyword(tmp_path, monkeypatch) -> None:
+    write_mathlib(tmp_path, FILES)
+    monkeypatch.setenv("PROVER_EMBED", "1")
+    # Embedder returns None (chat-only endpoint): neural path yields [] and
+    # search_lemmas must fall back to keyword ranking, not raise.
+    hits = retrieval.search_lemmas(
+        "theorem prime_mul_iff {a b : ℕ} : Nat.Prime (a * b) ↔ ...",
+        k=3, lean_dir=tmp_path,
+        index=retrieval.load_index(tmp_path))
+    assert hits  # keyword path still returns relevant lemmas
+    assert hits[0]["name"] == "prime_mul_iff"
 
 
 def test_load_index_recovers_from_corrupt_cache(tmp_path: Path) -> None:

@@ -54,10 +54,16 @@ def test_manifest_fields_roundtrip(tmp_path: Path) -> None:
     assert p.visible is False
 
 
-def test_rejects_bad_difficulty_and_dupes(tmp_path: Path) -> None:
+def test_accepts_source_specific_difficulty(tmp_path: Path) -> None:
+    # MiniF2F/Putnam/FormalQual importers emit their own difficulty values
+    # (e.g. "minif2f_test"); the loader must accept any non-empty string and
+    # let the router fall back to defaults for unknown tiers.
     _write_manifest(tmp_path, "d", 'id = "d"\ndifficulty = "insane"\nstatement = "s"\n')
-    with pytest.raises(ValueError, match="unknown difficulty"):
-        load_problems(tmp_path)
+    p = load_problems(tmp_path)[0]
+    assert p.difficulty == "insane"
+
+
+def test_rejects_duplicate_ids(tmp_path: Path) -> None:
     d2 = tmp_path / "dupes"
     d2.mkdir()
     for fname in ("one", "two"):

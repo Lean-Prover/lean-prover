@@ -9,6 +9,7 @@ report.json
 .env
 # Generated run artifacts — regenerate, do not commit
 benchmark/*_baseline*.json
+benchmark/minif2f_report.json
 benchmark/zen_medium_*.json
 benchmark/fidelity_report.json
 benchmark/train_*.jsonl

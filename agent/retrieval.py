@@ -246,7 +246,20 @@ def search_lemmas(
     lean_dir: Path | None = None,
     index: list[dict] | None = None,
 ) -> list[dict]:
-    """Return the top-k most relevant Mathlib lemma signatures for a statement."""
+    """Return the top-k most relevant Mathlib lemma signatures for a statement.
+
+    When neural retrieval is enabled (``PROVER_EMBED=1``) and an embeddings
+    endpoint is available, uses embedding cosine similarity; otherwise falls
+    back to keyword overlap. Retrieval is always best-effort — a neural
+    failure never raises into the proof loop.
+    """
+    if os.getenv("PROVER_EMBED") == "1":
+        try:
+            hits = search_lemmas_embed(statement, k=k, lean_dir=lean_dir)
+            if hits:
+                return hits
+        except Exception:  # noqa: BLE001 — neural retrieval is best-effort
+            pass
     from .loop import LEAN_DIR
 
     lean_dir = lean_dir or LEAN_DIR
@@ -259,9 +272,100 @@ def search_lemmas(
     return best
 
 
+# --------------------------------------------------------------------------
+# Neural (embedding) premise selection — PROVER_EMBED=1.
+#
+# Requires an embeddings endpoint (OpenAI-compatible /embeddings) or a
+# pluggable embedder. Precomputes embeddings for the lemma index once and
+# caches them, then ranks candidates by cosine similarity at query time.
+# When no embedder is available (chat-only endpoints), the neural path
+# returns [] and search_lemmas falls back to keyword retrieval.
+# --------------------------------------------------------------------------
+
+EMBED_CACHE_VERSION = 1
+EMBED_DEFAULT_LIMIT = 5000  # capped index so the JSON cache stays bounded
+
+
+def _embed_cache_path(lean_dir: Path) -> Path:
+    tmp = lean_dir / "tmp"
+    tmp.mkdir(exist_ok=True)
+    return tmp / "lemma_embeddings.json"
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two equal-length vectors (pure Python)."""
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    if not na or not nb:
+        return 0.0
+    return dot / (na * nb)
+
+
+def build_embed_index(lean_dir: Path, embed) -> list[dict]:
+    """Embed the lemma index once; return [{name, signature, vec}].
+
+    ``embed`` is a callable ``texts: list[str] -> list[list[float]] | None``
+    (e.g. ``agent.llm.embed``). Capped by ``PROVER_EMBED_LIMIT`` so the JSON
+    cache stays bounded. Returns [] when the embedder is unavailable.
+    """
+    idx = load_index(lean_dir)
+    limit = int(os.environ.get("PROVER_EMBED_LIMIT", EMBED_DEFAULT_LIMIT))
+    idx = idx[:limit]
+    sigs = [e["signature"] for e in idx]
+    vecs = embed(sigs)
+    if not vecs:
+        return []
+    out = [{"name": e["name"], "signature": e["signature"], "vec": v}
+           for e, v in zip(idx, vecs)]
+    cache = _embed_cache_path(lean_dir)
+    cache.write_text(json.dumps(
+        {"version": EMBED_CACHE_VERSION, "items": out}), encoding="utf-8")
+    return out
+
+
+def load_embed_index(lean_dir: Path, embed) -> list[dict]:
+    """Load the cached embedding index, rebuilding when it is missing/stale."""
+    cache = _embed_cache_path(lean_dir)
+    if cache.exists():
+        try:
+            data = json.loads(cache.read_text(encoding="utf-8"))
+            if data.get("version") == EMBED_CACHE_VERSION:
+                return data["items"]
+        except (json.JSONDecodeError, OSError, ValueError):
+            pass
+    return build_embed_index(lean_dir, embed)
+
+
+def search_lemmas_embed(
+    statement: str,
+    k: int = DEFAULT_K,
+    lean_dir: Path | None = None,
+    embed=None,
+) -> list[dict]:
+    """Top-k lemmas by embedding cosine similarity with `statement`."""
+    from .loop import LEAN_DIR
+
+    lean_dir = lean_dir or LEAN_DIR
+    if embed is None:
+        from . import llm
+
+        embed = llm.embed
+    idx = load_embed_index(lean_dir, embed)
+    if not idx:
+        return []
+    vec = embed([statement])
+    if not vec:
+        return []
+    q = vec[0]
+    scored = [(e, _cosine(q, e["vec"])) for e in idx]
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    return [e for e, s in scored[:k] if s > 0]
+
+
 def enabled() -> bool:
-    """True when proof-time retrieval is on (PROVER_RETRIEVE=1)."""
-    return os.getenv("PROVER_RETRIEVE") == "1"
+    """True when proof-time retrieval is on (PROVER_RETRIEVE=1 or PROVER_EMBED=1)."""
+    return os.getenv("PROVER_RETRIEVE") == "1" or os.getenv("PROVER_EMBED") == "1"
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -39,6 +39,7 @@ from .leaderboard import (
     provenance,
 )
 from .misc import (
+    cmd_acp,
     cmd_chat,
     cmd_datagen,
     cmd_export,
@@ -49,6 +50,8 @@ from .misc import (
     cmd_login,
     cmd_mcp,
     cmd_rpc,
+    cmd_rldata,
+    cmd_search,
     cmd_synth,
     cmd_tui,
     cmd_update,
@@ -79,6 +82,7 @@ __all__ = [
     "_warn_model_mismatch",
     "cli",
     "cmd_ask",
+    "cmd_acp",
     "cmd_bench",
     "cmd_chat",
     "cmd_datagen",
@@ -92,6 +96,8 @@ __all__ = [
     "cmd_mcp",
     "cmd_prove",
     "cmd_rpc",
+    "cmd_rldata",
+    "cmd_search",
     "cmd_sessions",
     "cmd_synth",
     "cmd_tui",

@@ -287,6 +287,10 @@ def verify(problems: list[dict], lean_dir: Path, timeout: int = 180) -> list[dic
     exits 0. Non-compiling entries keep their first diagnostics so nothing is
     silently dropped. Returns a new list; input is not mutated.
     """
+    # compile_only runs `lake env lean <file>` with cwd=lean_dir, so the
+    # per-problem temp file must be absolute (or resolved) — a relative
+    # lean_dir otherwise yields a path that doesn't exist from that cwd.
+    lean_dir = Path(lean_dir).resolve()
     checked = []
     tmp_dir = lean_dir / "tmp"
     tmp_dir.mkdir(exist_ok=True)

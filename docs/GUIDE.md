@@ -21,7 +21,7 @@ lake --version
 
 ```bash
 cd ~/Code/lean-prover/lean
-lake update             # fetches mathlib (pinned to v4.20.0 in lakefile.toml)
+lake update             # fetches mathlib (pinned to v4.33.0 in lakefile.toml)
 lake exe cache get      # downloads prebuilt oleans (~10 min first time)
 lake build              # verify it compiles
 cd ..
@@ -137,7 +137,7 @@ like any other problems file:
 
 ```bash
 # Import the Lean4 MiniF2F port (needs the checkout) and verify all statements
-# compile against the pinned Mathlib (244/244 pass on v4.20.0, 2026-08-19).
+# compile against the pinned Mathlib (244/244 pass on v4.33.0, 2026-08-19).
 python benchmark/import_standard.py minif2f --src /path/to/miniF2F-lean4 \
     --split test --verify            # writes benchmark/minif2f_test.json
 prover bench --problems benchmark/minif2f_test.json

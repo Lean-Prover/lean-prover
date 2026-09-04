@@ -1,0 +1,209 @@
+[
+  {
+    "id": "formalqual_BanachStoneTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace BanachStoneTheorem\n\n/-- Banach-Stone theorem for real-valued continuous functions on compact Hausdorff spaces. -/\n\ntheorem prover_MainTheorem (X Y : Type*) [TopologicalSpace X] [CompactSpace X] [T2Space X]\n    [TopologicalSpace Y] [CompactSpace Y] [T2Space Y]\n    (e : C(X, ℝ) ≃ₗᵢ[ℝ] C(Y, ℝ)) :\n    Nonempty (X ≃ₜ Y) := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "BanachStoneTheorem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_BorsukUlamTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace BorsukUlamTheorem\n\nnoncomputable section\n\n/-- The unit sphere `S^n` as a subtype of `ℝ^{n+1}`. -/\nabbrev UnitSphere (n : ℕ) : Type :=\n  {x : EuclideanSpace ℝ (Fin (n + 1)) // ‖x‖ = 1}\n\n/-- The antipodal map `x ↦ -x` on the unit sphere. -/\ndef antipode {n : ℕ} : UnitSphere n → UnitSphere n :=\n  fun x => ⟨-x.1, by simpa [norm_neg] using x.2⟩\n\n/-- Borsuk–Ulam theorem (statement): any continuous map `S^n → ℝ^n` identifies a pair of antipodal\npoints. -/\n\ntheorem prover_MainTheorem (n : ℕ) :\n    ∀ f : UnitSphere n → EuclideanSpace ℝ (Fin n),\n      Continuous f → ∃ x : UnitSphere n, f x = f (antipode x) := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "BorsukUlamTheorem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_BurnsidePrimeDegreeTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace BurnsidePrimeDegreeTheorem\n\nopen MulAction\n\n/--\n**Burnside's theorem on transitive permutation groups of prime degree (statement)**.\n\nA transitive permutation group of prime degree is either 2-transitive or has a normal regular\nsubgroup.\n-/\n\ntheorem prover_MainTheorem\n    {α : Type*} [Fintype α]\n    {G : Subgroup (Equiv.Perm α)}\n    (htrans : IsPretransitive G α)\n    (hp : (Fintype.card α).Prime) :\n    IsMultiplyPretransitive G α 2 ∨\n      ∃ N : Subgroup G, N.Normal ∧ IsPretransitive N α ∧\n        ∀ a : α, MulAction.stabilizer N a = ⊥ := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "BurnsidePrimeDegreeTheorem",
+    "compiles": false,
+    "error": "(process group killed: timeout after 180s)"
+  },
+  {
+    "id": "formalqual_CollatzMapAlmostBoundedValues",
+    "difficulty": "formalqual",
+    "statement": "namespace CollatzMapAlmostBoundedValues\n\nopen Filter\nopen scoped BigOperators\n\n/-- Collatz map on `ℕ`: `n ↦ n/2` if `n` is even, and `n ↦ 3n+1` if `n` is odd. -/\ndef collatz (n : ℕ) : ℕ :=\n  if Even n then n / 2 else 3 * n + 1\n\n/-- An orbit of `collatz` starting from `n` attains a value strictly below `f n`. -/\ndef AttainsBelow (f : ℕ → ℕ) (n : ℕ) : Prop :=\n  ∃ k : ℕ, (collatz^[k]) n < f n\n\nnoncomputable def logWeightSum (S : Set ℕ) (N : ℕ) : ℝ := by\n  classical\n  exact ∑ n ∈ Finset.Icc (1 : ℕ) N, (if n ∈ S then (1 / (n : ℝ)) else 0)\n\n/-- A set `S` has logarithmic density zero if `(1/log N) * ∑_{n≤N, n∈S} (1/n) → 0`. -/\nnoncomputable def LogDensityZero (S : Set ℕ) : Prop :=\n  Tendsto (fun N : ℕ => (1 / Real.log (N : ℝ)) * logWeightSum S N) atTop (nhds 0)\n\n/-- **Almost all Collatz orbits attain almost bounded values** (Tao): for any function `f(n) → ∞`,\nlogarithmically almost every starting value has some iterate below `f n`. -/\n\ntheorem prover_MainTheorem :\n    ∀ f : ℕ → ℕ, Tendsto f atTop atTop →\n      LogDensityZero {n : ℕ | ¬ AttainsBelow f n} := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "CollatzMapAlmostBoundedValues",
+    "compiles": false,
+    "error": "(process group killed: timeout after 180s)"
+  },
+  {
+    "id": "formalqual_ColorfulCaratheodoryTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace ColorfulCaratheodoryTheorem\n\nnoncomputable section\n\n/-- The colorful Carathéodory theorem (statement): if each of `d+1` sets of points in `ℝ^d`\ncontains the origin in its convex hull, then one can pick one point from each set so that the\norigin lies in the convex hull of the chosen points. -/\n\ntheorem prover_MainTheorem (d : ℕ)\n    (C : Fin (d + 1) → Set (EuclideanSpace ℝ (Fin d)))\n    (hC : ∀ i, (0 : EuclideanSpace ℝ (Fin d)) ∈ convexHull ℝ (C i)) :\n    ∃ p : Fin (d + 1) → EuclideanSpace ℝ (Fin d),\n      (∀ i, p i ∈ C i) ∧ (0 : EuclideanSpace ℝ (Fin d)) ∈ convexHull ℝ (Set.range p) := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "ColorfulCaratheodoryTheorem",
+    "compiles": false,
+    "error": "(process group killed: timeout after 180s)"
+  },
+  {
+    "id": "formalqual_DLOQuantifierElimination",
+    "difficulty": "formalqual",
+    "statement": "namespace DLOQuantifierElimination\n\nopen FirstOrder Language\n\n/-- A theory T eliminates quantifiers if every formula is semantically equivalent\nto a quantifier-free formula in all models of T. -/\ndef EliminatesQuantifiers {L : Language} (T : L.Theory) : Prop :=\n  ∀ {α : Type*} {n : ℕ} (φ : L.BoundedFormula α n),\n    ∃ ψ : L.BoundedFormula α n,\n      ψ.IsQF ∧\n      ∀ (M : Type*) [L.Structure M] [M ⊨ T],\n        ∀ (v : α → M) (xs : Fin n → M),\n          φ.Realize v xs ↔ ψ.Realize v xs\n\n/-- **Quantifier Elimination for Dense Linear Orders**:\nThe theory of dense linear orders without endpoints (DLO)\nadmits quantifier elimination. -/\n\ntheorem prover_MainTheorem :\n    EliminatesQuantifiers (Language.order.dlo ∪ Language.order.nonemptyTheory) := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "DLOQuantifierElimination",
+    "compiles": false,
+    "error": "(process group killed: timeout after 180s)"
+  },
+  {
+    "id": "formalqual_DeBruijnErdos",
+    "difficulty": "formalqual",
+    "statement": "namespace DeBruijnErdos\n\nopen SimpleGraph\n\n/-- The de Bruijn-Erdős theorem: If every finite subgraph of G is k-colorable,\nthen G itself is k-colorable. -/\n\ntheorem prover_MainTheorem {V : Type*} (G : SimpleGraph V) (k : ℕ) :\n    (∀ s : Finset V, (G.induce (↑s : Set V)).Colorable k) → G.Colorable k := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "DeBruijnErdos",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_ErdosDiscrepancyProblem",
+    "difficulty": "formalqual",
+    "statement": "namespace ErdosDiscrepancyProblem\n\nopen scoped BigOperators\n\ndef IsSign (z : ℤ) : Prop :=\n  z = 1 ∨ z = -1\n\n/-- Tao's solution of the Erdős discrepancy problem. -/\ndef DiscrepancyUnbounded : Prop :=\n  ∀ f : ℕ → ℤ, (∀ n, IsSign (f n)) →\n    ∀ C : ℕ, ∃ d n : ℕ, 0 < d ∧ 0 < n ∧\n      C < Int.natAbs (∑ i ∈ Finset.Icc (1 : ℕ) n, f (i * d))\n\ntheorem prover_MainTheorem : DiscrepancyUnbounded := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "ErdosDiscrepancyProblem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_GleasonKahaneZelazkoTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace GleasonKahaneZelazkoTheorem\n\n/-- Gleason-Kahane-Zelazko theorem for complex Banach algebras: a normalized complex-linear\nfunctional on a complex Banach algebra that does not vanish on invertible elements is an algebra\nhomomorphism. -/\n\ntheorem prover_MainTheorem (A : Type*) [NormedRing A] [NormedAlgebra ℂ A]\n    [CompleteSpace A] :\n    ∀ φ : A →ₗ[ℂ] ℂ, φ 1 = 1 →\n      (∀ a : A, IsUnit a → φ a ≠ 0) →\n      ∃ ψ : A →ₐ[ℂ] ℂ, ψ.toLinearMap = φ := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "GleasonKahaneZelazkoTheorem",
+    "compiles": false,
+    "error": "/home/lpatel/Code/lean-prover/lean/tmp/minif2f_import_8.lean:14:5: error: unexpected token 'φ'; expected '(', '[', '_', '{', '⦃' or identifier\n"
+  },
+  {
+    "id": "formalqual_GreenTaoTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace GreenTaoTheorem\n\n/-- Green-Tao theorem: the primes contain arbitrarily long arithmetic progressions. -/\n\ntheorem prover_MainTheorem :\n    ∀ k : ℕ, ∃ a d : ℕ, 0 < d ∧ ∀ i : Fin k, Nat.Prime (a + i.1 * d) := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "GreenTaoTheorem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_Hilbert17thProblem",
+    "difficulty": "formalqual",
+    "statement": "namespace Hilbert17thProblem\n\nopen scoped BigOperators\n\nnoncomputable section\n\n/-- A multivariate real polynomial is *globally nonnegative* if it evaluates to a nonnegative real\nnumber at every point. -/\ndef IsGloballyNonnegative {n : ℕ} (p : MvPolynomial (Fin n) ℝ) : Prop :=\n  ∀ x : Fin n → ℝ, 0 ≤ p.eval x\n\n/-- Artin's solution to Hilbert's 17th problem (statement): a globally nonnegative real polynomial\nis the sum of squares of rational functions. -/\n\ntheorem prover_MainTheorem (n : ℕ) (p : MvPolynomial (Fin n) ℝ) (hp : IsGloballyNonnegative p) :\n    ∃ m : ℕ,\n      ∃ f : Fin m → FractionRing (MvPolynomial (Fin n) ℝ),\n        algebraMap (MvPolynomial (Fin n) ℝ) (FractionRing (MvPolynomial (Fin n) ℝ)) p =\n          ∑ i : Fin m, (f i) ^ 2 := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "Hilbert17thProblem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_JordanCycleTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace JordanCycleTheorem\n\nopen MulAction\n\n/-- Jordan's theorem (cycle version): if `G ≤ Equiv.Perm α` is preprimitive and contains a cycle\nwhose support has prime cardinality `p` with `p + 3 ≤ Nat.card α`, then\n`alternatingGroup α ≤ G`.\n\nNote: this statement already appears in mathlib as a `proof_wanted` declaration\n`alternatingGroup_le_of_isPreprimitive_of_isCycle_mem`. -/\n\ntheorem prover_MainTheorem {α : Type*} [Fintype α] [DecidableEq α] {G : Subgroup (Equiv.Perm α)}\n    (hG : IsPreprimitive G α) {p : ℕ} (hp : p.Prime) (hp' : p + 3 ≤ Nat.card α)\n    {g : Equiv.Perm α} (hgc : g.IsCycle) (hgp : g.support.card = p) (hg : g ∈ G) :\n    alternatingGroup α ≤ G := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "JordanCycleTheorem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_JordanDerangementTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace JordanDerangementTheorem\n\nopen MulAction\n\n/-- Jordan's derangement theorem: a finite transitive permutation group on a nontrivial set contains\na derangement (equivalently, a fixed-point-free element). -/\n\ntheorem prover_MainTheorem {α : Type*} [Finite α] [Nontrivial α]\n    {G : Subgroup (Equiv.Perm α)} (hG : IsPretransitive G α) :\n    ∃ g : Equiv.Perm α, g ∈ G ∧ g ∈ derangements α := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "JordanDerangementTheorem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_KakeyaTheorem3D",
+    "difficulty": "formalqual",
+    "statement": "namespace KakeyaTheorem3D\n\nopen Set\n\nabbrev R3 : Type := EuclideanSpace ℝ (Fin 3)\n\n/-- The closed line segment from `x` to `x + v`. -/\ndef segmentAlong (x v : R3) : Set R3 := (fun t : ℝ => x + t • v) '' Set.Icc (0 : ℝ) 1\n\n/-- A Kakeya set in `R^3` contains a line segment of length `1` in every direction. -/\ndef IsKakeyaSet (K : Set R3) : Prop :=\n  ∀ v : R3, ‖v‖ = 1 → ∃ x : R3, segmentAlong x v ⊆ K\n\n/-- The three-dimensional Kakeya theorem: every Kakeya set in `R^3` has Hausdorff dimension `3`. -/\n\ntheorem prover_MainTheorem :\n    ∀ K : Set R3, IsKakeyaSet K → dimH K = (3 : ENNReal) := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "KakeyaTheorem3D",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_MaynardTaoBoundedPrimeGaps",
+    "difficulty": "formalqual",
+    "statement": "namespace MaynardTaoBoundedPrimeGaps\n\n/-- The Maynard-Tao bounded prime gaps theorem: there is a finite bound `B` such that arbitrarily\nlarge pairs of distinct primes differ by at most `B`. -/\n\ntheorem prover_MainTheorem :\n    ∃ B : ℕ, 0 < B ∧\n      ∀ N : ℕ, ∃ p q : ℕ,\n        N ≤ p ∧ Nat.Prime p ∧ Nat.Prime q ∧ p < q ∧ q - p ≤ B := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "MaynardTaoBoundedPrimeGaps",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_ParisHarringtonPrinciple",
+    "difficulty": "formalqual",
+    "statement": "namespace ParisHarringtonPrinciple\n\nopen Finset\n\n/-- A subset `H` of `[1, N]` is relatively large for the Paris-Harrington principle if it has at\nleast `m` elements and its cardinality is at least its minimum element. -/\ndef RelativelyLarge (m N : ℕ) (H : Finset ℕ) : Prop :=\n  H ⊆ Finset.Ico 1 (N + 1) ∧\n  m ≤ H.card ∧\n  ∃ hne : H.Nonempty, H.min' hne ≤ H.card\n\n/-- A set `H` is homogeneous for a coloring if all `k`-subsets of `H` have the same color. -/\ndef IsHomogeneous {α β : Type*} [DecidableEq α] (k : ℕ) (H : Finset α)\n    (c : Finset α → β) : Prop :=\n  ∀ s ∈ H.powersetCard k, ∀ t ∈ H.powersetCard k, c s = c t\n\n/-- Paris-Harrington principle (strengthened finite Ramsey theorem): assuming `0 < r` and `k ≤ m`,\nthere exists `N` such that every `r`-coloring of the `k`-subsets of `[1, N]` has a relatively\nlarge homogeneous set. This is the finite combinatorial statement whose unprovability over Peano\narithmetic is usually called the Paris-Harrington theorem. -/\n\ntheorem prover_MainTheorem (k r m : ℕ) (hr : 0 < r) (hm : k ≤ m) :\n    ∃ N : ℕ, ∀ (c : Finset ℕ → Fin r),\n      ∃ H : Finset ℕ, RelativelyLarge m N H ∧ IsHomogeneous k H c := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "ParisHarringtonPrinciple",
+    "compiles": false,
+    "error": "(process group killed: timeout after 180s)"
+  },
+  {
+    "id": "formalqual_PontryaginDuality",
+    "difficulty": "formalqual",
+    "statement": "namespace PontryaginDuality\n\nopen scoped Topology\n\n/-- A topological-group isomorphism `e : A ≃ₜ* PontryaginDual (PontryaginDual A)` realizes\nPontryagin biduality if it agrees pointwise with the canonical evaluation map\n`a ↦ (fun χ ↦ χ a)`. -/\ndef IsEvaluationIso (A : Type*) [CommGroup A] [TopologicalSpace A] [IsTopologicalGroup A]\n    (e : A ≃ₜ* PontryaginDual (PontryaginDual A)) : Prop :=\n  ∀ a (χ : PontryaginDual A), e a χ = χ a\n\n/-- **Pontryagin duality (canonical formulation)**: every locally compact Hausdorff abelian\ntopological group is canonically topologically isomorphic to its double Pontryagin dual, via the\nevaluation map `a ↦ (χ ↦ χ a)`. -/\n\ntheorem prover_MainTheorem (A : Type*) [CommGroup A] [TopologicalSpace A]\n    [IsTopologicalGroup A]\n    [LocallyCompactSpace A] [T2Space A] :\n    ∃ e : A ≃ₜ* PontryaginDual (PontryaginDual A), IsEvaluationIso A e := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "PontryaginDuality",
+    "compiles": false,
+    "error": "(process group killed: timeout after 180s)"
+  },
+  {
+    "id": "formalqual_QuillenSuslinTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace QuillenSuslinTheorem\n\n/-- Quillen–Suslin theorem (Serre's conjecture): finitely generated projective modules over a\nmultivariate polynomial ring over a field are free. -/\n\ntheorem prover_MainTheorem (k : Type*) [Field k] (n : ℕ) (P : Type*) [AddCommGroup P]\n    [Module (MvPolynomial (Fin n) k) P]\n    [Module.Finite (MvPolynomial (Fin n) k) P]\n    [Module.Projective (MvPolynomial (Fin n) k) P] :\n    Module.Free (MvPolynomial (Fin n) k) P := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "QuillenSuslinTheorem",
+    "compiles": false,
+    "error": "(process group killed: timeout after 180s)"
+  },
+  {
+    "id": "formalqual_RungeTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace RungeTheorem\n\nopen scoped Topology\n\n/-- **Runge's theorem (statement)**: a holomorphic function on an open set can be approximated\nuniformly on a compact subset (with connected complement) by polynomials. -/\n\ntheorem prover_MainTheorem {U K : Set ℂ} {f : ℂ → ℂ} (hU : IsOpen U) (hK : IsCompact K) (hKU : K ⊆ U)\n    (hKc : IsConnected (Kᶜ)) (hf : DifferentiableOn ℂ f U) :\n    ∀ ε > 0, ∃ p : Polynomial ℂ, ∀ z ∈ K, ‖p.eval z - f z‖ < ε := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "RungeTheorem",
+    "compiles": false,
+    "error": "(process group killed: timeout after 180s)"
+  },
+  {
+    "id": "formalqual_SchauderFixedPointTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace SchauderFixedPointTheorem\n\nopen scoped Topology\n\nvariable {E : Type*} [NormedAddCommGroup E] [NormedSpace ℝ E] [CompleteSpace E]\n\n/-- **Schauder fixed point theorem (statement)**: a continuous self-map of a nonempty compact\nconvex subset of a Banach space has a fixed point. -/\n\ntheorem prover_MainTheorem {s : Set E} (hs_nonempty : s.Nonempty) (hs_compact : IsCompact s)\n    (hs_convex : Convex ℝ s) {f : E → E} (hf_cont : ContinuousOn f s)\n    (hf_maps : Set.MapsTo f s s) :\n    ∃ x ∈ s, f x = x := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "SchauderFixedPointTheorem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_SkolemMahlerLechTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace SkolemMahlerLechTheorem\n\n/-- The arithmetic progression `{a + d * n | n : ℕ}`. -/\ndef arithProg (a d : ℕ) : Set ℕ :=\n  Set.range fun n : ℕ => a + d * n\n\n/-- Skolem-Mahler-Lech theorem: the zero set of a linear recurrence sequence over a characteristic\nzero field is a finite union of arithmetic progressions plus a finite exceptional set. -/\n\ntheorem prover_MainTheorem (K : Type*) [Field K] [CharZero K] (E : LinearRecurrence K) (u : ℕ → K)\n    (hu : E.IsSolution u) :\n    ∃ s : Finset ℕ, ∃ t : Finset (ℕ × ℕ),\n      {n : ℕ | u n = 0} = (s : Set ℕ) ∪ ⋃ p ∈ (t : Set (ℕ × ℕ)), arithProg p.1 p.2 := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "SkolemMahlerLechTheorem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_TernaryGoldbachTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace TernaryGoldbachTheorem\n\n/-- Helfgott's ternary Goldbach theorem. -/\n\ntheorem prover_MainTheorem :\n    ∀ n : ℕ,\n      n % 2 = 1 →\n        5 < n → ∃ p q r : ℕ, p.Prime ∧ q.Prime ∧ r.Prime ∧ n = p + q + r := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "TernaryGoldbachTheorem",
+    "compiles": true,
+    "error": ""
+  },
+  {
+    "id": "formalqual_VonNeumannDoubleCommutantTheorem",
+    "difficulty": "formalqual",
+    "statement": "namespace VonNeumannDoubleCommutantTheorem\n\nopen scoped Topology\n\nvariable {H : Type*} [NormedAddCommGroup H] [InnerProductSpace ℂ H] [CompleteSpace H]\n\n/-- **von Neumann double commutant theorem (statement)**:\nfor a unital *-subalgebra `S ⊆ B(H)`, being closed in the weak operator topology is equivalent to\nbeing equal to its bicommutant. -/\n\ntheorem prover_MainTheorem (S : StarSubalgebra ℂ (H →L[ℂ] H)) :\n    IsClosed ((ContinuousLinearMap.toWOT (RingHom.id ℂ) H H) '' (S : Set (H →L[ℂ] H))) ↔\n      Set.centralizer (Set.centralizer (S : Set (H →L[ℂ] H))) = (S : Set (H →L[ℂ] H)) := by\n  sorry",
+    "source": "formalqualbench",
+    "source_name": "VonNeumannDoubleCommutantTheorem",
+    "compiles": false,
+    "error": "/home/lpatel/Code/lean-prover/lean/tmp/minif2f_import_22.lean:17:15: error(lean.unknownIdentifier): Unknown constant `ContinuousLinearMap.toWOT`"
+  }
+]

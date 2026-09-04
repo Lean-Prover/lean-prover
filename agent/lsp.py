@@ -287,10 +287,8 @@ class LeanLSP:
         formatted goals, or None on any failure — callers must treat it as
         best-effort, exactly like `goal_at_end`.
 
-        NOTE: this RPC only exists in Lean ≥ v4.22. On our pinned v4.20.0
-        toolchain the server answers "No RPC method 'Lean.Widget.runTactic'
-        found" and the method returns None (verified against the real server).
-        It becomes usable once the toolchain is bumped.
+        NOTE: this RPC only exists in Lean ≥ v4.22. It is available on our
+        pinned v4.33.0 toolchain; it returns None on any failure.
         """
         with self._lock:
             if not self.open_file():

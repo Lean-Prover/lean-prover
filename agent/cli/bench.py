@@ -14,11 +14,11 @@ from agent import main as _m
 
 from .common import _warn_model_mismatch
 from .leaderboard import (
-    DEFAULT_SET,
     LEADERBOARD_SOLVER,
     SCHEMA_VERSION,
     _check_frozen_set,
     _report_drift,
+    _resolve_set_name,
     provenance,
 )
 
@@ -116,11 +116,12 @@ def cmd_bench(args: argparse.Namespace) -> int:
     from ..problems import active_problems, load_problems
 
     problems_all = load_problems(args.problems)
-    drifted = _check_frozen_set(args.problems, getattr(args, "set", DEFAULT_SET),
-                                problems_all)
-    if drifted:
-        _report_drift(drifted, getattr(args, "set", DEFAULT_SET))
-        return 1
+    set_name = _resolve_set_name(args.problems, getattr(args, "set", None))
+    if set_name is not None:
+        drifted = _check_frozen_set(args.problems, set_name, problems_all)
+        if drifted:
+            _report_drift(drifted, set_name)
+            return 1
     start = args.start - 1  # 1-indexed for humans
     problems = [p.as_dict() for p in active_problems(problems_all)[start:]]
 
