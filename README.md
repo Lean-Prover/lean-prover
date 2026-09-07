@@ -149,7 +149,7 @@ prover rl-data --problems benchmark/problems.json --n-attempts 3 --out benchmark
 # GRPO fine-tune needs a trainable/GPU policy model — see agent/finetune.py.
 
 # Tests
-pytest tests/        # 404 tests (loop, compaction, session, TUI, commands, baselines)
+pytest tests/        # 680 tests (loop, compaction, session, TUI, commands, baselines)
 ```
 
 ## How it works
@@ -255,12 +255,12 @@ agent/              the agent (Python)
   autocomplete.py   slash-command completions (tau pattern)
   themes.py         TUI themes as JSON data (tau pattern)
   terminal_title.py OSC terminal title + braille spinner (tau pattern)
-  tui.py            Textual TUI (problems, live trace, replay, commands)
+  tui/              Textual TUI package (app.py, screens.py, handlers.py, *.tcss)
   main.py           CLI (prove / bench / tui / mcp / sessions / usage / leaderboard)
   lean_baseline.py  no-LLM baseline runner (prover lean-baseline)
   synth_lean.py     Lean-proved corpus JSONL writer (prover synth-lean)
 benchmark/          fixed theorem set + runner + import_standard.py + merge_reports.py
-tests/              pytest suite (379 tests)
+tests/              pytest suite (680 tests)
 leaderboard.json    local score history (prover leaderboard; served by lean-prover-web)
 ```
 
