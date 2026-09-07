@@ -9,6 +9,7 @@ here); the modal screens live in ``agent.tui.screens``; styling is in
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from contextlib import suppress
@@ -44,11 +45,11 @@ from agent.themes import (
     available_tui_theme_names,
     get_tui_theme,
     textual_theme_variables,
-    theme_css_variables,
 )
 from agent.tui import MAX_WORKERS, load_problems
 from agent.tui.handlers import ProverRunMixin
 from agent.tui.screens import (
+    ConfirmScreen,
     LeaderboardScreen,
     MessageScreen,
     ModelsScreen,
@@ -56,6 +57,7 @@ from agent.tui.screens import (
     ProveScreen,
     ReplayScreen,
     SessionsScreen,
+    SettingsScreen,
     TrustScreen,
     WorkersScreen,
 )
@@ -87,6 +89,8 @@ class ProverApp(ProverRunMixin, App):
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("p", "prove_selected", "Prove"),
         Binding("c", "custom_prove", "Custom"),
+        Binding("enter", "inspect_problem", "Inspect", show=False),
+        Binding("y", "copy_statement", "Copy stmt", show=False),
         Binding("r", "run_remaining", "Run rest"),
         Binding("w", "set_workers", "Workers"),
         Binding("s", "stop", "Stop"),
@@ -95,6 +99,7 @@ class ProverApp(ProverRunMixin, App):
         Binding("m", "open_models", "Models", show=False),
         Binding("ctrl+o", "open_models", "Models", show=False),
         Binding("ctrl+space", "complete_prompt", show=False),
+        Binding("ctrl+r", "reload", "Reload", show=False),
         Binding("ctrl+k", "open_command_palette", "Commands", show=False),
         Binding("ctrl+e", "edit_queued_message", "Edit queued", show=False),
         Binding("q", "quit_app", "Quit"),
@@ -105,6 +110,7 @@ class ProverApp(ProverRunMixin, App):
         Binding("G", "vim_end", "End", show=False),
         Binding("/", "focus_search", "Search", show=False),
         Binding("escape", "blur_search", "Blur", show=False),
+        Binding("?", "show_hotkeys", "Hotkeys", show=False),
     ]
 
     def __init__(self, parallel: int = 1, tui_settings: TuiSettings | None = None) -> None:
@@ -125,10 +131,18 @@ class ProverApp(ProverRunMixin, App):
         self._active_session_id: str | None = None
         self._custom_seq = 0
         self._queued_prompts: list[str] = []
+        # Prompt-bar input history for up/down recall (bounded, disk-backed).
+        self._prompt_history: list[str] = self._load_prompt_history()
+        self._history_index: int | None = None
+        self._history_draft: str = ""
+        # Ids proved this session — the source of truth for "what's left to
+        # run" so r/p/space stay consistent even when the list is filtered.
+        self._proved_ids: set[str] = set()
         self.counts = {"proved": 0, "failed": 0, "stopped": 0}
         self.command_registry = create_default_command_registry()
         self._live_tokens: int = 0
         self._live_cost: float = 0.0
+        self._status_model: str = self.model
         self._run_active: bool = False
         self._compact_warning_shown: set[str] = set()  # track per-session
         mode = os.environ.get("PROVER_NOTIFICATION", self.tui_settings.notification)
@@ -146,8 +160,14 @@ class ProverApp(ProverRunMixin, App):
         except KeyError:
             return get_tui_theme("prover-dark")
 
-    def _active_theme(self) -> TuiTheme:
-        return self.resolved_theme
+    def _apply_saved_theme(self) -> None:
+        """Apply the saved theme, honoring the PROVER_THEME env override.
+
+        ``resolved_theme()`` (agent.tui_settings) prefers PROVER_THEME when
+        set; using it here fixes the env override being silently ignored.
+        """
+        with suppress(Exception):
+            self.theme = resolved_theme(self.tui_settings)
 
     def _register_prover_themes(self) -> None:
         """Register every available theme with Textual's theme system."""
@@ -252,8 +272,7 @@ class ProverApp(ProverRunMixin, App):
 
     def on_mount(self) -> None:
         self._register_prover_themes()
-        with suppress(Exception):
-            self.theme = self.tui_settings.theme
+        self._apply_saved_theme()
         self.query_one("#problems").styles.width = self.tui_settings.problem_pane_width
         self._apply_thinking_level()
         self._sync_terminal_title()
@@ -272,6 +291,10 @@ class ProverApp(ProverRunMixin, App):
         """Blur the search bar (escape)."""
         self.query_one("#prompt", PromptInput).focus()
 
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Enter on a problem opens the inspect modal (ListView consumes enter)."""
+        self.action_inspect_problem()
+
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "search-bar":
             await self._filter_problems(event.value)
@@ -279,6 +302,14 @@ class ProverApp(ProverRunMixin, App):
         if event.input.id != "prompt":
             return
         text = event.value.strip()
+        # Record the submission for up/down recall (dedup consecutive, bounded).
+        if text and (not self._prompt_history or self._prompt_history[-1] != text):
+            self._prompt_history.append(text)
+            if len(self._prompt_history) > 50:
+                del self._prompt_history[0]
+            self._save_prompt_history()
+        self._history_index = None
+        self._history_draft = ""
         event.input.clear()
         self._hide_completions()
         if not text:
@@ -286,11 +317,13 @@ class ProverApp(ProverRunMixin, App):
         if text.startswith("/"):
             try:
                 result = self.command_registry.execute(self, text)
-                if not result.handled and result.message:
-                    self.notify(result.message, severity="warning")
                 if result.handled:
                     self._apply_command(result)
                     return
+                # Not handled: an unknown command. Keep its message so the
+                # template fallback below notifies exactly once (previously
+                # the message fired here AND again on the fallback path).
+                unknown_msg = result.message
             except Exception:  # noqa: BLE001 — command isolation boundary
                 # A command handler that raises (file/session I/O, etc.) must
                 # never tear down the Textual app — surface it and continue.
@@ -311,7 +344,10 @@ class ProverApp(ProverRunMixin, App):
             if expanded is not None:
                 text = expanded.strip()
             else:
-                self.notify(f"Unknown command: {text.split()[0]}", severity="warning")
+                self.notify(
+                    unknown_msg or f"Unknown command: {text.split()[0]}",
+                    severity="warning",
+                )
                 return
         # Plain text: queue as a follow-up proof while a run is active
         # (tau's queue_follow_up), else treat as an inline theorem.
@@ -366,6 +402,8 @@ class ProverApp(ProverRunMixin, App):
             hint.display = False
         for p in problems[:100]:
             list_view.append(ProblemRow(p))
+        # Give the list a cursor so enter (ListView.Selected) fires inspect.
+        list_view.index = 0
         self._refresh_status()
 
     # --------------------------------------------------------------- vim nav
@@ -398,9 +436,10 @@ class ProverApp(ProverRunMixin, App):
         """Queue the selected problem for proof (space)."""
         list_view = self.query_one("#problems-list", ListView)
         idx = list_view.index
-        if idx is None or idx >= len(self._filtered_problems):
+        pool = self._active_pool()
+        if idx is None or idx >= len(pool):
             return
-        problem = self._filtered_problems[idx]
+        problem = pool[idx]
         self._log(f"[dim]queued: {problem['id']}[/dim]")
         if not self._run_active:
             self._start_run([problem])
@@ -424,8 +463,7 @@ class ProverApp(ProverRunMixin, App):
         defaults to always so headless/tests are unaffected, and
         PROVER_TRUST=ask enables the interactive modal)."""
         self._register_prover_themes()
-        with suppress(Exception):
-            self.theme = self.tui_settings.theme
+        self._apply_saved_theme()
         self._trust_summary, self._trust_resolution = (
             await self._resolve_project_trust(mode)
         )
@@ -446,18 +484,26 @@ class ProverApp(ProverRunMixin, App):
             self._emit_reload_summary(problems=0)
             return
         self._total_problems_in_file = len(self.problems)
-        self._filtered_problems = []
+        self._filtered_problems = list(self.problems)
         if not self.problems:
+            self._filtered_problems = []
             self._log("[dim]benchmark/problems.json not found — type a search to find problems[/dim]")
+            await self._render_problem_list([])
             self._emit_reload_summary(problems=0)
             return
+        # Render the full problem browser up front so p/space/r all act on a
+        # visible list (a search then narrows it). Previously the list stayed
+        # empty until the user searched, which left p proving an invisible
+        # problem and space/r silently no-oping.
+        await self._render_problem_list(self.problems)
+        self._refresh_status()
         # Focus search bar for immediate typing
         search_input = self.query_one("#search-bar", Input)
         search_input.focus()
         model = self.model
         self._log(f"model: [cyan]{model}[/cyan] — "
                   f"[dim]{len(self.problems)} problems available. "
-                  f"Type to search, Enter to load.[/dim]")
+                  f"Type to filter, Enter to search.[/dim]")
         self._log("[dim]j/k navigate · space queue · p prove · /models config[/dim]")
         self._emit_reload_summary(problems=0)
 
@@ -521,14 +567,20 @@ class ProverApp(ProverRunMixin, App):
 
     def _status_text(self) -> str:
         done = self.counts["proved"] + self.counts["failed"] + self.counts["stopped"]
-        remaining = max(0, len(self._filtered_problems) - done)
+        remaining = max(0, len(self._active_pool()) - done)
         state = "RUNNING" if self._run_active else "idle"
         cost_str = f" cost≈${self._live_cost:.4f}" if self._live_cost > 0 else ""
         tokens_str = f" tokens={self._live_tokens}" if self._live_tokens > 0 else ""
-        return (f"{state:<7} workers={self.n_workers} · thinking={self.thinking_level} · "
+        return (f"{self._status_model} · {state:<7} workers={self.n_workers} · "
+                f"thinking={self.thinking_level} · "
                 f"proved {self.counts['proved']} · "
                 f"failed {self.counts['failed']} · stopped {self.counts['stopped']} · "
                 f"remaining {remaining}{tokens_str}{cost_str}")
+
+    def _refresh_model_cache(self) -> None:
+        """Re-read the active model name into the status bar (cheap, on demand)."""
+        self._status_model = self.model
+        self._refresh_status()
 
     def _refresh_status(self) -> None:
         self.query_one("#status-bar", Static).update(self._status_text())
@@ -589,6 +641,71 @@ class ProverApp(ProverRunMixin, App):
         self._log("[dim]edited queued prompt back into input[/dim]")
         return True
 
+    def _history_path(self) -> Path:
+        from agent.tui_settings import tui_settings_path
+
+        return tui_settings_path().parent / "history.json"
+
+    def _load_prompt_history(self) -> list[str]:
+        """Load the disk-backed prompt history (bounded, best-effort)."""
+        try:
+            data = json.loads(self._history_path().read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return [str(x) for x in data][-50:]
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+        return []
+
+    def _save_prompt_history(self) -> None:
+        """Persist the prompt history so it survives restarts."""
+        try:
+            path = self._history_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(self._prompt_history, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    def _history_back(self) -> None:
+        """Recall an earlier prompt-bar submission (up)."""
+        if not self._prompt_history:
+            return
+        prompt = self.query_one("#prompt", PromptInput)
+        if self._history_index is None:
+            self._history_draft = prompt.value
+            self._history_index = len(self._prompt_history) - 1
+        elif self._history_index > 0:
+            self._history_index -= 1
+        prompt.value = self._prompt_history[self._history_index]
+        prompt.cursor_position = len(prompt.value)
+
+    def _history_forward(self) -> None:
+        """Move toward the newest submission (down), restoring the draft at the end."""
+        prompt = self.query_one("#prompt", PromptInput)
+        if self._history_index is None:
+            return
+        self._history_index += 1
+        if self._history_index >= len(self._prompt_history):
+            self._history_index = None
+            prompt.value = self._history_draft
+        else:
+            prompt.value = self._prompt_history[self._history_index]
+        prompt.cursor_position = len(prompt.value)
+
+    def on_key(self, event: events.Key) -> None:
+        """Recall prompt history with up/down while the prompt bar is focused."""
+        prompt = self.query_one_optional("#prompt", PromptInput)
+        if prompt is None or self.focused is not prompt:
+            return
+        if event.key == "up":
+            event.stop()
+            self._history_back()
+        elif event.key == "down":
+            event.stop()
+            self._history_forward()
+
     def _new_session(self) -> None:
         """Start fresh: reset statuses, counts and panels (tau's _new_session)."""
         self.counts = {"proved": 0, "failed": 0, "stopped": 0}
@@ -597,6 +714,7 @@ class ProverApp(ProverRunMixin, App):
         self._compact_warning_shown = set()
         self._custom_seq = 0
         self._queued_prompts = []
+        self._proved_ids = set()
         self._active_session_id = None
         for row in self.query(ProblemRow):
             row.set_status("pending")
@@ -703,6 +821,8 @@ class ProverApp(ProverRunMixin, App):
             self._check_update()
         if result.permissions_requested:
             self._handle_permissions(result)
+        if result.settings_requested:
+            self.action_settings()
         if result.exit_requested:
             self.exit()
 
@@ -775,7 +895,7 @@ class ProverApp(ProverRunMixin, App):
                 return
             models_mod.save_store(active=name)
             self._log(f"model set to [bold]{name}[/bold]")
-        self._refresh_status()
+        self._refresh_model_cache()
 
     def _switch_session(self, session_id: str) -> None:
         """Make a recorded session the active/current one (live session switch)."""
@@ -959,11 +1079,26 @@ class ProverApp(ProverRunMixin, App):
 
     def _show_usage(self, session_arg: str | None) -> None:
         from agent.session_manager import SessionManager
-        from agent.session_usage import collect_session_usage, render_usage_dashboard
+        from agent.session_usage import (
+            aggregate_usage_by_model,
+            collect_session_usage,
+            render_usage_by_model,
+            render_usage_dashboard,
+        )
 
         model = self.model
         sm = SessionManager()
         records = {r.id: r for r in sm.list_sessions()}
+        if session_arg == "models":
+            if not records:
+                self.notify("No sessions recorded.", severity="error")
+                return
+            usages = [
+                collect_session_usage(sess.read_session(Path(rec.path)), model=None)
+                for rec in records.values()
+            ]
+            self._show_command_message(render_usage_by_model(aggregate_usage_by_model(usages)))
+            return
         if session_arg is None or session_arg == "all":
             if not records:
                 self.notify("No sessions recorded.", severity="error")
@@ -1016,6 +1151,16 @@ class ProverApp(ProverRunMixin, App):
 
     # ---------------------------------------------------------------- actions
 
+    def _active_pool(self) -> list[dict]:
+        """The pool of problems the list currently shows.
+
+        ``_filtered_problems`` is populated only while a search filter is
+        active; with no filter the whole ``self.problems`` set is the pool.
+        Every p/space/r/status path must agree on this so a search never
+        makes an action target the wrong (or an invisible) problem.
+        """
+        return self._filtered_problems if self._search_text else self.problems
+
     def _selected_problem(self) -> dict | None:
         problems_list = self.query_one(ListView)
         idx = problems_list.index
@@ -1024,7 +1169,7 @@ class ProverApp(ProverRunMixin, App):
         # The list renders the *filtered* pool; index into the same pool the
         # rows came from, otherwise an active search maps p onto the wrong
         # problem (or past the 100-row cap, onto an arbitrary one).
-        pool = self._filtered_problems if self._search_text else self.problems
+        pool = self._active_pool()
         if not (0 <= idx < len(pool)):
             return None
         return pool[idx]
@@ -1038,6 +1183,27 @@ class ProverApp(ProverRunMixin, App):
             return
         self._start_run([problem])
 
+    def action_inspect_problem(self) -> None:
+        """Show the selected problem's full statement and saved proof (enter)."""
+        problem = self._selected_problem()
+        if problem is None:
+            return
+        body = (f"id: [cyan]{problem['id']}[/cyan]  "
+                f"difficulty: {problem.get('difficulty', '?')}\n\n"
+                f"statement:\n{problem.get('statement', '')}\n")
+        proof = self._get_last_proof_body(problem["id"])
+        if proof:
+            body += f"\nlast proof:\n{proof}"
+        self.push_screen(MessageScreen(f"problem — {problem['id']}", body))
+
+    def action_copy_statement(self) -> None:
+        """Copy the selected problem's statement to the clipboard (y)."""
+        problem = self._selected_problem()
+        if problem is None:
+            return
+        self.copy_to_clipboard(problem.get("statement", ""))
+        self.notify(f"Copied statement for {problem['id']}.")
+
     def action_custom_prove(self) -> None:
         if self._run_active:
             self.notify("Already running — press s to stop first.", severity="warning")
@@ -1050,7 +1216,7 @@ class ProverApp(ProverRunMixin, App):
             base = m.group(1) if m else "custom"
             self._custom_seq += 1
             problem = {
-                "id": f"{base}-{self._custom_seq}" if self._custom_seq > 1 else base,
+                "id": f"{base}-{self._custom_seq}",
                 "statement": code,
                 "difficulty": "custom",
             }
@@ -1073,8 +1239,8 @@ class ProverApp(ProverRunMixin, App):
         if self._run_active:
             self.notify("Already running — press s to stop first.", severity="warning")
             return
-        rows = self.query(ProblemRow)
-        todo = [r.problem for r in rows if r.status not in ("proved",)]
+        pool = self._active_pool()
+        todo = [p for p in pool if p["id"] not in self._proved_ids]
         if not todo:
             self.notify("Nothing left to run.", severity="information")
             return
@@ -1097,6 +1263,12 @@ class ProverApp(ProverRunMixin, App):
     def action_leaderboard(self) -> None:
         self.push_screen(LeaderboardScreen())
 
+    def action_show_hotkeys(self) -> None:
+        """Show the keyboard-shortcuts overlay (?)."""
+        result = self.command_registry.execute(self, "/hotkeys")
+        if result.message:
+            self._show_command_message(result.message)
+
     def action_models(self) -> None:
         """Open the model-profiles manager (agent/models.py store)."""
         self.push_screen(ModelsScreen())
@@ -1113,6 +1285,26 @@ class ProverApp(ProverRunMixin, App):
             )
             return
         self.push_screen(PromptsScreen(templates), callback=self._prompt_template_chosen)
+
+    def action_settings(self) -> None:
+        """Open the TUI settings screen (/settings)."""
+        self.push_screen(SettingsScreen(self.tui_settings), self._settings_saved)
+
+    def _settings_saved(self, settings: TuiSettings | None) -> None:
+        """Apply + persist settings edited in the SettingsScreen."""
+        if settings is None:
+            return
+        self.tui_settings = settings
+        save_tui_settings(settings)
+        self._apply_saved_theme()
+        self._apply_thinking_level()
+        self._refresh_status()
+        self._sync_terminal_title()
+        self.notify("Settings saved.")
+
+    def action_reload(self) -> None:
+        """Reload problems, themes and prompts from disk (ctrl+r)."""
+        self._reload_resources()
 
     def _reload_resources(self) -> None:
         """Re-run discovery: trust, problems, themes (tau's /reload)."""
@@ -1132,7 +1324,18 @@ class ProverApp(ProverRunMixin, App):
         prompt.focus()
 
     def action_quit_app(self) -> None:
-        self.exit()
+        if self._run_active:
+            self.push_screen(
+                ConfirmScreen("Quit while a run is active?",
+                              "In-flight proofs will be abandoned."),
+                self._quit_confirmed,
+            )
+        else:
+            self.exit()
+
+    def _quit_confirmed(self, ok: bool | None) -> None:
+        if ok:
+            self.exit()
 
     def on_unmount(self) -> None:
         self._terminal_title.restore()
@@ -1150,6 +1353,13 @@ class ProverApp(ProverRunMixin, App):
             prompt = self.query_one_optional("#prompt", PromptInput)
             if prompt is not None and (self.focused is None or self.focused is prompt):
                 event.stop()
+                threshold = self.tui_settings.large_paste_threshold
+                if threshold and len(event.text) > threshold:
+                    self.notify(
+                        f"Large paste: {len(event.text)} chars "
+                        f"(threshold {threshold})",
+                        severity="warning",
+                    )
                 prompt.insert_pasted_text(event.text)
                 return
         await super().on_event(event)

@@ -100,6 +100,7 @@ class CommandResult:
     permissions_pattern: str = ""                #   argument pattern (remember)
     permissions_allow: bool | None = None        #   allow (True) or deny (False) (remember)
     permissions_mode: str | None = None          #   ask|auto|yolo (mode)
+    settings_requested: bool = False             # /settings — open the TUI settings screen
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,6 +355,11 @@ def create_default_command_registry() -> CommandRegistry:
         handler=_permissions_command,
         aliases=("perm",), search_terms=("acl", "allow", "deny", "approve"),
     ))
+    registry.register(SlashCommand(
+        name="settings", description="Open the TUI settings screen.",
+        usage="/settings", handler=_settings_command,
+        aliases=("prefs",), search_terms=("options", "preferences", "config"),
+    ))
     return registry
 
 
@@ -607,6 +613,10 @@ def _leaderboard_command(context: CommandContext) -> CommandResult:
 
 def _prompts_command(context: CommandContext) -> CommandResult:
     return CommandResult(handled=True, prompts_requested=True)
+
+
+def _settings_command(context: CommandContext) -> CommandResult:
+    return CommandResult(handled=True, settings_requested=True)
 
 
 def _reload_command(context: CommandContext) -> CommandResult:

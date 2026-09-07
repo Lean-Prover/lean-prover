@@ -261,10 +261,36 @@ async def test_sessions_delete(monkeypatch, tmp_path) -> None:
         await _open_sessions(app, pilot, index=1)  # alpha
         await pilot.press("d")
         await pilot.pause()
+        from agent.tui import ConfirmScreen
+
+        assert isinstance(app.screen, ConfirmScreen)
+        await pilot.press("y")
+        await pilot.pause()
         sessions_dir = Path(app.session_dir)
         assert not (sessions_dir / "20260101-000001-alpha.jsonl").exists()
         assert (sessions_dir / "20260101-000002-beta.jsonl").exists()
         assert SessionManager().get("20260101-000001-alpha") is None
+        await pilot.press("q")
+        await pilot.pause()
+
+
+@pytest.mark.anyio
+async def test_sessions_delete_cancel_keeps_session(monkeypatch, tmp_path) -> None:
+    app = _make_sessions_screen_app(tmp_path, monkeypatch)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await _open_sessions(app, pilot, index=1)  # alpha
+        await pilot.press("d")
+        await pilot.pause()
+        from agent.tui import ConfirmScreen
+
+        assert isinstance(app.screen, ConfirmScreen)
+        await pilot.press("n")
+        await pilot.pause()
+        sessions_dir = Path(app.session_dir)
+        assert (sessions_dir / "20260101-000001-alpha.jsonl").exists()
+        assert SessionManager().get("20260101-000001-alpha") is not None
+        # Back on the sessions browser after cancelling.
+        assert isinstance(app.screen, SessionsScreen)
         await pilot.press("q")
         await pilot.pause()
 

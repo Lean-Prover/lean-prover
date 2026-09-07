@@ -147,6 +147,8 @@ class ProverRunMixin:
 
     def _finish_row(self, problem_id: str, status: str, result) -> None:
         self._set_row_status(problem_id, status)
+        if status == "proved":
+            self._proved_ids.add(problem_id)
         self.counts[status] = self.counts.get(status, 0) + 1
         proof = result.proof if result.proved else ""
         if proof and self.n_workers <= 1:
@@ -157,6 +159,8 @@ class ProverRunMixin:
 
     def _finish_custom_row(self, problem_id: str, status: str, result) -> None:
         """Finish handler for runs not backed by a ProblemRow (branch/custom)."""
+        if status == "proved":
+            self._proved_ids.add(problem_id)
         self.counts[status] = self.counts.get(status, 0) + 1
         proof = result.proof if result.proved else ""
         if proof:
@@ -166,6 +170,9 @@ class ProverRunMixin:
         self._run_active = False
         self._sync_text_selection_state()
         self._refresh_status()
+        self._sync_terminal_title()
+        if self.tui_settings.terminal_bell:
+            self.bell()
         self._terminal_notification.notify_turn_finished()
         self._drain_queued_prompts()
 
@@ -175,6 +182,8 @@ class ProverRunMixin:
         self._refresh_status()
         self._sync_terminal_title()
         self._log(f"[bold]run finished[/bold] — proved {self.counts['proved']} so far")
+        if self.tui_settings.terminal_bell:
+            self.bell()
         self._terminal_notification.notify_turn_finished()
         self._drain_queued_prompts()
 
@@ -197,7 +206,7 @@ class ProverRunMixin:
         base = m.group(1) if m else "custom"
         self._custom_seq += 1
         problem = {
-            "id": f"{base}-{self._custom_seq}" if self._custom_seq > 1 else base,
+            "id": f"{base}-{self._custom_seq}",
             "statement": statement,
             "difficulty": "custom",
         }
@@ -271,17 +280,21 @@ class ProverRunMixin:
     # ---------------------------------------------------------------- diff
 
     def _show_proof_diff(self, problem_id: str, body: str) -> None:
-        """Show a diff view of the proof when full-file mode writes a new file."""
+        """Show a diff view of the proof when full-file mode writes a new file.
+
+        Only one diff modal is shown at a time: accepted llm_responses can
+        arrive mid-run across problems, and stacking a modal per response
+        would bury the live run behind a pile of diffs.
+        """
         try:
             import agent.tui as _tui
 
             target = _tui.REPO / "lean" / "tmp" / f"Prover_{problem_id}.lean"
             if not target.exists():
                 return
-            current = target.read_text(encoding="utf-8")
-            old = self._get_last_proof_body(problem_id)
-            if old is None:
-                old = current
+            if any(isinstance(s, ProofDiffScreen) for s in self.screen_stack):
+                return
+            old = self._get_last_proof_body(problem_id) or ""
             diff = self._compute_diff(old, body)
             if diff:
                 self.push_screen(ProofDiffScreen(problem_id, diff))
@@ -319,6 +332,8 @@ class ProverRunMixin:
 
     def _sync_terminal_title(self) -> None:
         """Reflect run state in the terminal tab title (tau parity)."""
+        if not self.tui_settings.window_title_updates:
+            return
         title = f"{len(self.problems)} problems · proved {self.counts.get('proved', 0)}"
         self._terminal_title.update(title, running=self._run_active)
 

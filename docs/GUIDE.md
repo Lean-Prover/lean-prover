@@ -206,8 +206,17 @@ Files:
 
 `prover tui` (add `-p 4` for parallel workers). Panel layout: problem list,
 log, goals, errors, proof. Keymap: `p` prove selected · `c` custom theorem ·
-`r` run remaining · `w` workers · `s` stop · `v` sessions · `l` leaderboard ·
-`ctrl+k` command palette · `ctrl+e` edit last queued prompt · `q` quit.
+`enter` inspect the selected problem · `y` copy its statement · `r` run
+remaining · `w` workers · `s` stop · `v` sessions · `l` leaderboard ·
+`ctrl+k` command palette · `ctrl+e` edit last queued prompt · `ctrl+r` reload ·
+`q` quit · `?` hotkeys overlay. The status bar shows the active model.
+The prompt bar recalls your last submissions with `up`/`down` (history
+persists across restarts). The sessions browser (`v`), prompts picker
+(`/prompts`) and models manager (`/models`) each have a filter box, and the
+leaderboard (`l`) reloads with `r`. In the prompts picker `a` creates a new
+template, `e` edits one in place, `d` deletes one (confirmed); in the
+sessions browser `ctrl+a` deletes all sessions (confirmed). `/usage models`
+shows a per-model token/cost summary across all sessions.
 
 While a run is active, plain text typed in the prompt bar is queued and
 proved automatically when the run finishes (ctrl+e pulls the last queued one
@@ -218,7 +227,7 @@ Slash commands in the prompt bar (complete with `ctrl+space`):
 
 ```
 /help /status /clear /stop /run /new /compact /quit
-/usage [session|all]          token + cost dashboard
+/usage [session|all|models]   token + cost dashboard (per-session, all, or by model)
 /prove [<statement>]        prove a custom theorem (editor modal or inline)
  /workers <n>                parallel proof workers
  /resume                     browse sessions (picker) · replay one
@@ -230,6 +239,8 @@ Slash commands in the prompt bar (complete with `ctrl+space`):
 /prompts                    pick a markdown prompt template to apply
 /theme [name]               prover-dark / prover-light / high-contrast
 /model /models /system /hotkeys     show model / manage model profiles / loop system prompt / keymap
+/settings                   open the settings screen (theme, notification, thinking,
+                            auto-copy, window title, terminal bell, paste threshold)
 ```
 
 Prompt templates are markdown files in `~/.prover/prompts/` or

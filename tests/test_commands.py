@@ -319,9 +319,9 @@ def test_status_shows_thinking_level(registry, session) -> None:
 
 
 def test_registry_command_count(registry) -> None:
-    """34 built-ins (25 prover + 9 Tau-parity: tree, fork, login, logout,
-    skills, contexts, tools, stats, update)."""
-    assert len(registry.list_commands()) == 34
+    """35 built-ins (26 prover incl. settings + 9 Tau-parity: tree, fork,
+    login, logout, skills, contexts, tools, stats, update)."""
+    assert len(registry.list_commands()) == 35
 
 
 def test_command_result_defaults(registry, session) -> None:

@@ -19,8 +19,10 @@ __all__ = [
     "RequestUsage",
     "SessionUsage",
     "UsageEvent",
+    "aggregate_usage_by_model",
     "collect_session_usage",
     "estimated_request_cost",
+    "render_usage_by_model",
     "render_usage_dashboard",
 ]
 
@@ -188,6 +190,35 @@ def _bar(value: float, maximum: float, width: int = 24) -> str:
         return " " * width
     filled = min(width, max(0, round((min(value, maximum) / maximum) * width)))
     return "█" * filled + " " * (width - filled)
+
+
+def aggregate_usage_by_model(usages) -> dict[str, SessionUsage]:
+    """Aggregate multiple SessionUsage objects into per-model summaries."""
+    by_model: dict[str, list[RequestUsage]] = {}
+    for usage in usages:
+        for r in usage.requests:
+            by_model.setdefault(r.model, []).append(r)
+    return {
+        model: SessionUsage(requests=tuple(reqs))
+        for model, reqs in sorted(by_model.items())
+    }
+
+
+def render_usage_by_model(by_model: dict[str, SessionUsage]) -> str:
+    """Render a per-model token/cost summary (sorted by cost descending)."""
+    lines = ["", "Usage — by model", "=" * 48]
+    if not by_model:
+        lines.append("  (no token usage recorded)")
+        return "\n".join(lines)
+    ordered = sorted(by_model.items(),
+                     key=lambda kv: (kv[1].total_cost or 0), reverse=True)
+    for model, usage in ordered:
+        lines.append("")
+        lines.append(f"### {model}")
+        lines.append(f"  Requests:   {len(usage.requests):,}")
+        lines.append(f"  Tokens:     {_compact_number(usage.total_tokens):>8}")
+        lines.append(f"  Cost:       {_format_cost(usage.total_cost):>8}")
+    return "\n".join(lines)
 
 
 def render_usage_dashboard(usage: SessionUsage) -> str:
