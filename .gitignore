@@ -13,6 +13,7 @@ benchmark/minif2f_report.json
 benchmark/zen_medium_*.json
 benchmark/fidelity_report.json
 benchmark/train_*.jsonl
+benchmark/putnam_sample.json
 leaderboard.json
 corpus/lean_proved.jsonl
 # Scratch outputs written to CWD by tools
