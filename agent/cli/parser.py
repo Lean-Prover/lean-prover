@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from agent import main as _m
+from .common import _lazy_main
+
+_m = _lazy_main()
 
 
 def cli(argv: list[str] | None = None) -> None:

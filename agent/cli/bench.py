@@ -12,9 +12,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agent import main as _m
+from .common import _lazy_main, _warn_model_mismatch
 
-from .common import _warn_model_mismatch
+_m = _lazy_main()
 from .leaderboard import (
     LEADERBOARD_SOLVER,
     SCHEMA_VERSION,

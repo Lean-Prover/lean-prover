@@ -11,7 +11,9 @@ import argparse
 import json
 import os
 
-from agent import main as _m
+from .common import _lazy_main
+
+_m = _lazy_main()
 
 BOARD_FILE = "leaderboard.json"
 

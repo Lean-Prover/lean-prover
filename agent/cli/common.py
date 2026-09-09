@@ -6,6 +6,27 @@ import os
 import sys
 
 
+class _LazyMain:
+    """Lazy handle to ``agent.main``, resolved on first attribute access.
+
+    The command modules read their dependencies through ``agent.main`` (so the
+    test suite's ``agent.main`` monkeypatch contract holds). Importing main
+    eagerly at module top creates a cycle ``agent.main -> agent.cli ->
+    <cmd module> -> agent.main`` that breaks ``python -m agent.main`` (which
+    loads main as ``__main__``). Resolving lazily defers the import until a
+    command actually runs, by which point ``agent.main`` is fully loaded.
+    """
+
+    def __getattr__(self, name: str):
+        from agent import main as _m
+
+        return getattr(_m, name)
+
+
+def _lazy_main() -> _LazyMain:
+    return _LazyMain()
+
+
 def _warn_model_mismatch() -> None:
     """Fast endpoint sanity check: warn when PROVER_MODEL isn't served, so a
     mistyped model name fails in seconds rather than hanging on completions."""

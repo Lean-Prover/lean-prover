@@ -11,9 +11,9 @@ import argparse
 import json as _json
 import sys
 
-from agent import main as _m
+from .common import _lazy_main, _warn_model_mismatch
 
-from .common import _warn_model_mismatch
+_m = _lazy_main()
 
 
 def cmd_prove(args: argparse.Namespace) -> int:
