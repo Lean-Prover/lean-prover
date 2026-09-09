@@ -214,7 +214,8 @@ def _build_parser() -> argparse.ArgumentParser:
     rp.set_defaults(fn=_m.cmd_rpc)
 
     ch = sub.add_parser("chat", help="open a CodingSession REPL (Tau chat parity)")
-    ch.add_argument("--model", default="gpt-4o")
+    ch.add_argument("--model", default=None,
+                    help="model name (default: resolved PROVER_MODEL / TUI-active)")
     ch.add_argument("--provider", default="")
     ch.add_argument("--cwd", default=None)
     ch.add_argument("--session-id", default=None)

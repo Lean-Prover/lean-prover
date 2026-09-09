@@ -94,10 +94,11 @@ def cmd_chat(args: argparse.Namespace) -> int:
     import asyncio
 
     from .coding_session import CodingSession, CodingSessionConfig
+    from .models import resolved_model_name
 
     async def run() -> int:
         config = CodingSessionConfig(
-            model=args.model,
+            model=args.model or resolved_model_name(),
             provider_name=args.provider or "",
             cwd=Path(args.cwd or Path.cwd()),
             session_id=args.session_id,
@@ -135,7 +136,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="command", required=True)
 
     c = sub.add_parser("chat", help="open a coding session REPL")
-    c.add_argument("--model", default="gpt-4o")
+    c.add_argument("--model", default=None,
+                   help="model name (default: resolved PROVER_MODEL / TUI-active)")
     c.add_argument("--provider", default="")
     c.add_argument("--cwd", default=None)
     c.add_argument("--session-id", default=None)
