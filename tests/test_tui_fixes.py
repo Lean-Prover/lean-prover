@@ -13,16 +13,23 @@ from pathlib import Path
 
 import pytest
 from textual.events import Paste
-from textual.widgets import Button, Checkbox, DataTable, Input, ListView, OptionList, TextArea
+from textual.widgets import (
+    Button,
+    Checkbox,
+    DataTable,
+    Input,
+    ListView,
+    OptionList,
+    TextArea,
+)
 
 from agent import models as models_mod
 from agent.tui import (
     ConfirmScreen,
     LeaderboardScreen,
-    ModelsScreen,
-    ProverApp,
-    ProofDiffScreen,
     PromptsScreen,
+    ProofDiffScreen,
+    ProverApp,
     ProveScreen,
     SettingsScreen,
     build_session_label,

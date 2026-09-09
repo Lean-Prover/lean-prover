@@ -33,8 +33,6 @@ def test_beam_returns_first_goal() -> None:
 
 
 def test_beam_prunes_frontier_to_width() -> None:
-    expanded = []
-
     def step(s):
         # each expansion produces 3 children
         return [_st(diag=i, name=f"{s.body}>{i}") for i in range(3)]

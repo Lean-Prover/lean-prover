@@ -45,6 +45,7 @@ from agent.themes import (
     available_tui_theme_names,
     get_tui_theme,
     textual_theme_variables,
+    theme_css_variables,
 )
 from agent.tui import MAX_WORKERS, load_problems
 from agent.tui.handlers import ProverRunMixin
@@ -642,7 +643,6 @@ class ProverApp(ProverRunMixin, App):
         return True
 
     def _history_path(self) -> Path:
-        from agent.tui_settings import tui_settings_path
 
         return tui_settings_path().parent / "history.json"
 

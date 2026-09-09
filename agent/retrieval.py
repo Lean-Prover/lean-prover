@@ -258,7 +258,7 @@ def search_lemmas(
             hits = search_lemmas_embed(statement, k=k, lean_dir=lean_dir)
             if hits:
                 return hits
-        except Exception:  # noqa: BLE001 — neural retrieval is best-effort
+        except Exception:  # noqa: BLE001, S110 — neural retrieval is best-effort
             pass
     from .loop import LEAN_DIR
 

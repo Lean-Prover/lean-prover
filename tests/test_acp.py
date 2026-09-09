@@ -21,7 +21,7 @@ def _result(proved: bool, proof: str = ""):
 
 
 def _drive(monkeypatch, script, fake_prove):
-    import agent.loop as loop
+    from agent import loop
 
     monkeypatch.setattr(loop, "prove", fake_prove)
     inp = io.StringIO("".join(json.dumps(m) + "\n" for m in script))
@@ -77,7 +77,7 @@ def test_session_lifecycle_streams_update_and_ends_turn(monkeypatch) -> None:
 
 
 def test_handle_prompt_cancelled_stop_reason(monkeypatch) -> None:
-    import agent.loop as loop
+    from agent import loop
 
     monkeypatch.setattr(loop, "prove", lambda *a, **k: _result(False))
     stop = acp._handle_prompt("sid", "theorem t : True := by sorry",

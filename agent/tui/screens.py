@@ -124,7 +124,7 @@ class ProofDiffScreen(ModalScreen[None]):
         """Colorize a unified diff: +/- hunks, headers, and @@ positions."""
         lines = []
         for line in diff.splitlines():
-            if line.startswith("+++") or line.startswith("---"):
+            if line.startswith(("+++", "---")):
                 lines.append(f"[bold cyan]{escape(line)}[/bold cyan]")
             elif line.startswith("@@"):
                 lines.append(f"[cyan]{escape(line)}[/cyan]")
@@ -335,7 +335,7 @@ def build_session_label(sp: Path, rec, recs: list[dict]) -> str:
     stats = calculate_session_stats(recs)
     title = rec.title if rec is not None and rec.title else ""
     try:
-        when = datetime.fromtimestamp(sp.stat().st_mtime).strftime("%m-%d %H:%M")
+        when = datetime.fromtimestamp(sp.stat().st_mtime).strftime("%m-%d %H:%M")  # noqa: DTZ006 — local-time session display is intentional
     except OSError:
         when = ""
     label = (f"{mark} {sp.stem:<42} {pid!s:<26} steps={steps} {secs}s"
@@ -625,7 +625,6 @@ class PromptsScreen(ModalScreen[str | None]):
 
     def action_edit_template(self) -> None:
         """Edit the highlighted template's content in place (e)."""
-        from agent.prompt_templates import PromptTemplate
 
         template = self._highlighted_template()
         if template is None:
