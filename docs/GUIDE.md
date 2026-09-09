@@ -284,6 +284,34 @@ attempts so it doesn't repeat the same dead ends.
 
 ---
 
+## 6b. Local inference with llama.cpp
+
+Tau `/local` parity (lean-adapted): a built-in llama.cpp backend over its
+OpenAI-compatible HTTP API. lean-prover never installs/starts/stops the server;
+it probes one configured endpoint and lists the models the server reports.
+
+Start llama.cpp yourself (router mode recommended):
+
+```bash
+llama-server --models-max 1 --parallel 1 --flash-attn auto
+```
+
+Configure and probe from the CLI:
+
+```bash
+prover local configure --url http://127.0.0.1:8080 --key <optional>
+prover local              # status + discovered model ids
+prover local doctor       # reachability + discovery + streaming
+prover local use --model <model-id>   # register a profile so prove targets it
+prover local reset        # remove lean-prover's settings (server untouched)
+```
+
+Endpoint precedence: `--url` > saved snapshot > `LLAMA_BASE_URL` > default
+`http://127.0.0.1:8080`. API key: stored credential > `LLAMA_API_KEY`. In the
+TUI, `/local` opens a screen with the same status/configure/doctor/use actions.
+
+---
+
 ## 7. Troubleshooting
 
 | Symptom | Fix |

@@ -254,4 +254,13 @@ def _build_parser() -> argparse.ArgumentParser:
     lb.add_argument("--show", action="store_true", help="only show current leaderboard")
     lb.set_defaults(fn=_m.cmd_leaderboard)
 
+    lc = sub.add_parser("local", help="configure/discover/doctor the llama.cpp local backend")
+    lc.add_argument("action", nargs="?", default="status",
+                    choices=["status", "configure", "doctor", "reset", "use"],
+                    help="status (default) | configure | doctor | reset | use")
+    lc.add_argument("--url", default=None, help="llama.cpp server URL (configure)")
+    lc.add_argument("--key", default=None, help="optional API key (configure)")
+    lc.add_argument("--model", default=None, help="model id (configure/use)")
+    lc.set_defaults(fn=_m.cmd_local)
+
     return ap

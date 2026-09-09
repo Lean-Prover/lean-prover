@@ -823,6 +823,8 @@ class ProverApp(ProverRunMixin, App):
             self._handle_permissions(result)
         if result.settings_requested:
             self.action_settings()
+        if result.local_requested:
+            self.action_local()
         if result.exit_requested:
             self.exit()
 
@@ -1262,6 +1264,11 @@ class ProverApp(ProverRunMixin, App):
 
     def action_leaderboard(self) -> None:
         self.push_screen(LeaderboardScreen())
+
+    def action_local(self) -> None:
+        from agent.tui import LocalScreen
+
+        self.push_screen(LocalScreen())
 
     def action_show_hotkeys(self) -> None:
         """Show the keyboard-shortcuts overlay (?)."""

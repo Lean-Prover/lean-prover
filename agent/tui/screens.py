@@ -88,6 +88,151 @@ class LeaderboardScreen(ModalScreen[None]):
                           tiers, e.get("date", ""))
 
 
+class LocalConfigureScreen(ModalScreen[tuple[str, str | None] | None]):
+    """Prompt for a llama.cpp endpoint (+ optional model) to persist."""
+
+    CSS_PATH: ClassVar[str] = "screens.tcss"
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, endpoint: str = "") -> None:
+        super().__init__()
+        self._endpoint = endpoint
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="local-config-box"):
+            yield Static("[bold]configure llama.cpp[/bold] [dim](esc cancel)[/dim]")
+            yield Input(value=self._endpoint, placeholder="http://127.0.0.1:8080",
+                        id="local-url")
+            yield Input(placeholder="model id (optional)", id="local-model")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "local-url":
+            url = event.value.strip()
+            if not url:
+                self.notify("An endpoint URL is required.", severity="warning")
+                return
+            model = self.query_one("#local-model", Input).value.strip() or None
+            self.dismiss((url, model))
+
+
+class LocalScreen(ModalScreen[None]):
+    """llama.cpp local backend — status, discovered models, doctor (Tau /local)."""
+
+    CSS_PATH: ClassVar[str] = "screens.tcss"
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("c", "configure", "Configure", show=False),
+        Binding("u", "use_model", "Use model", show=False),
+        Binding("d", "doctor", "Doctor", show=False),
+        Binding("r", "refresh", "Refresh", show=False),
+        Binding("q", "dismiss(None)", "Close"),
+        Binding("escape", "dismiss(None)", "Close"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            "[bold]local llama.cpp[/bold] "
+            "[dim](c configure · u use · d doctor · r refresh · q close)[/dim]",
+            id="local-title",
+        )
+        yield Static("", id="local-status")
+        yield DataTable(id="local-models")
+
+    def _backend(self):
+        from ..local_backend import LlamaCppBackend
+
+        return LlamaCppBackend()
+
+    def on_mount(self) -> None:
+        self._refresh()
+
+    def action_refresh(self) -> None:
+        self._refresh()
+        self.notify("Local backend refreshed.")
+
+    def _refresh(self) -> None:
+        backend = self._backend()
+        snap = backend.snapshot()
+        self.query_one("#local-status", Static).update(
+            f"endpoint: {backend.effective_endpoint()}\n"
+            f"configured model: {snap.get('model') or '(none)'}"
+        )
+        table = self.query_one("#local-models", DataTable)
+        table.clear(columns=True)
+        table.add_columns("model", "status")
+        try:
+            ids = backend.probe()
+        except Exception as exc:  # noqa: BLE001 — status is diagnostic
+            table.add_row("(unreachable)", str(exc))
+            return
+        if not ids:
+            table.add_row("(none discovered)", "")
+            return
+        for mid in ids:
+            table.add_row(mid, "available")
+
+    def action_configure(self) -> None:
+        backend = self._backend()
+        self.app.push_screen(
+            LocalConfigureScreen(backend.effective_endpoint()),
+            self._configured,
+        )
+
+    def _configured(self, result: tuple[str, str | None] | None) -> None:
+        if not result:
+            return
+        url, model = result
+        self._backend().configure(endpoint=url, model=model)
+        self._refresh()
+        self.notify(f"Configured llama.cpp → {url}")
+
+    def action_doctor(self) -> None:
+        report = self._backend().doctor()
+        lines = [
+            f"endpoint: {report['endpoint']}",
+            f"reachable: {'yes' if report['reachable'] else 'no'}",
+        ]
+        if report["models"]:
+            lines.append(f"models: {', '.join(report['models'])}")
+        if report["streaming"]:
+            lines.append("streaming: yes")
+        if report["warning"]:
+            lines.append(f"warning: {report['warning']}")
+        self.query_one("#local-status", Static).update("\n".join(lines))
+
+    def action_use_model(self) -> None:
+        table = self.query_one("#local-models", DataTable)
+        rows = table.rows
+        if not rows:
+            self.notify("No models discovered — start llama.cpp and refresh.",
+                        severity="warning")
+            return
+        # Use the highlighted row's model id (first column).
+        cursor = table.cursor_coordinate
+        if cursor is None:
+            self.notify("Select a model row first.", severity="warning")
+            return
+        row = table.get_row_at(cursor.row)
+        if not row:
+            return
+        model = str(row[0])
+        backend = self._backend()
+        from ..models import ModelProfile, save_store
+
+        save_store(
+            active=model,
+            profiles=[ModelProfile(
+                name=model,
+                base_url=f"{backend.effective_endpoint()}/v1",
+                api_key=backend.effective_api_key() or "",
+            )],
+        )
+        backend.configure(model=model)
+        self._refresh()
+        self.notify(f"Targeting local model {model}.")
+
+
 class ProofDiffScreen(ModalScreen[None]):
     CSS_PATH: ClassVar[str] = "screens.tcss"
     """Interactive, navigable diff of the last proof file written for a problem.

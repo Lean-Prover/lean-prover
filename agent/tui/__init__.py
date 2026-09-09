@@ -44,6 +44,8 @@ from agent.tui.handlers import ProverRunMixin
 from agent.tui.screens import (
     ConfirmScreen,
     LeaderboardScreen,
+    LocalConfigureScreen,
+    LocalScreen,
     MessageScreen,
     ModelFormScreen,
     ModelsScreen,
@@ -82,6 +84,8 @@ __all__ = [
     "REPO",
     "ConfirmScreen",
     "LeaderboardScreen",
+    "LocalConfigureScreen",
+    "LocalScreen",
     "MessageScreen",
     "ModelFormScreen",
     "ModelsScreen",

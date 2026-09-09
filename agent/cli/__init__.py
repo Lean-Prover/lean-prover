@@ -38,6 +38,7 @@ from .leaderboard import (
     load_board,
     provenance,
 )
+from .local import cmd_local
 from .misc import (
     cmd_acp,
     cmd_chat,
@@ -92,6 +93,7 @@ __all__ = [
     "cmd_leaderboard",
     "cmd_lean_baseline",
     "cmd_lean_synth",
+    "cmd_local",
     "cmd_login",
     "cmd_mcp",
     "cmd_prove",

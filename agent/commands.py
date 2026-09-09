@@ -101,6 +101,7 @@ class CommandResult:
     permissions_allow: bool | None = None        #   allow (True) or deny (False) (remember)
     permissions_mode: str | None = None          #   ask|auto|yolo (mode)
     settings_requested: bool = False             # /settings — open the TUI settings screen
+    local_requested: bool = False                # /local — llama.cpp local backend
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,6 +361,11 @@ def create_default_command_registry() -> CommandRegistry:
         usage="/settings", handler=_settings_command,
         aliases=("prefs",), search_terms=("options", "preferences", "config"),
     ))
+    registry.register(SlashCommand(
+        name="local", description="Configure/discover/doctor the llama.cpp local backend.",
+        usage="/local", handler=_local_command,
+        aliases=("llama",), search_terms=("local", "llama.cpp", "llama-cpp", "backend"),
+    ))
     return registry
 
 
@@ -617,6 +623,10 @@ def _prompts_command(context: CommandContext) -> CommandResult:
 
 def _settings_command(context: CommandContext) -> CommandResult:
     return CommandResult(handled=True, settings_requested=True)
+
+
+def _local_command(context: CommandContext) -> CommandResult:
+    return CommandResult(handled=True, local_requested=True)
 
 
 def _reload_command(context: CommandContext) -> CommandResult:
