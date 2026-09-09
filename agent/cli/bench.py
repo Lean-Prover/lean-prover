@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+from datetime import datetime, timezone
+from pathlib import Path
 
 from agent import main as _m
 
@@ -110,8 +112,6 @@ def _run_problems(
 
 
 def cmd_bench(args: argparse.Namespace) -> int:
-    from pathlib import Path
-
     _warn_model_mismatch()
     from ..problems import active_problems, load_problems
 
@@ -171,4 +171,45 @@ def cmd_bench(args: argparse.Namespace) -> int:
             "results": results, **provenance(args.problems),
         }, indent=2))
         print(f"Report written to {args.report}")
+    results_path = getattr(args, "results", None)
+    if results_path:
+        write_results(results_path, results, args, provenance(args.problems))
     return 0
+
+
+def write_results(path: str, results: list[dict], args: argparse.Namespace,
+                  prov: dict | None = None) -> None:
+    """Write a compact, web-friendly per-problem results document.
+
+    Leaner than ``--report``: per-problem entries carry only the fields the
+    site's benchmark page renders (no ``trace``/``attempts`` bloat), wrapped
+    with run provenance so the page can attribute scores to a model + commit.
+    """
+    from .. import llm
+
+    try:
+        model = llm.model()
+    except Exception:  # noqa: BLE001 — model name is best-effort metadata
+        model = None
+    compact = [
+        {
+            "id": r["id"],
+            "difficulty": r.get("difficulty"),
+            "statement": r["statement"],
+            "proved": r["proved"],
+            "steps": r["steps"],
+            "seconds": r["seconds"],
+            "tokens": r["tokens"],
+        }
+        for r in results
+    ]
+    Path(path).write_text(json.dumps({
+        "schema_version": 1,
+        "model": model,
+        "solver": LEADERBOARD_SOLVER,
+        "max_steps": args.max_steps,
+        "date": datetime.now(timezone.utc).date().isoformat(),
+        "provenance": prov or {},
+        "results": compact,
+    }, indent=2))
+    print(f"Results written to {path}")

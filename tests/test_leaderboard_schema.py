@@ -218,3 +218,36 @@ def test_prove_one_uses_prove_best_of_and_stamps_hash(monkeypatch) -> None:
         20, 1, 1)
     assert called["best"] == 1 and called["plain"] == 0, "bench/leaderboard worker uses prove_best_of"
     assert res["statement_hash"] == statement_hash("theorem t : True := by\n  sorry")
+
+
+def test_write_results_is_compact_and_stamped(tmp_path) -> None:
+    """bench --results emits a web-friendly per-problem doc, no trace/attempts."""
+    import argparse
+
+    from agent.cli.bench import write_results
+
+    args = argparse.Namespace(max_steps=20, problems="benchmark/problems.json")
+    results = [
+        {"id": "p1", "difficulty": "easy", "statement": "theorem x : True := by trivial",
+         "proved": True, "steps": 3, "seconds": 1.5, "tokens": 120,
+         "trace": ["x"], "attempts": [1]},
+        {"id": "p2", "difficulty": "hard", "statement": "theorem y : False := by sorry",
+         "proved": False, "steps": 5, "seconds": 2.0, "tokens": 200,
+         "trace": ["y"], "attempts": [1]},
+    ]
+    prov = {"benchmark_commit": "abc", "toolchain": "v4.33.0",
+            "problems_sha256": "deadbeef"}
+    out = tmp_path / "results.json"
+    write_results(str(out), results, args, prov)
+
+    doc = json.loads(out.read_text())
+    assert doc["schema_version"] == 1
+    assert doc["max_steps"] == 20
+    assert doc["solver"] == "prove_best_of"
+    assert doc["provenance"]["benchmark_commit"] == "abc"
+    assert [r["id"] for r in doc["results"]] == ["p1", "p2"]
+    entry = doc["results"][0]
+    assert entry["proved"] is True and entry["difficulty"] == "easy"
+    assert entry["steps"] == 3 and entry["seconds"] == 1.5 and entry["tokens"] == 120
+    # web page only needs these fields; the heavy report fields stay out
+    assert "trace" not in entry and "attempts" not in entry

@@ -234,6 +234,11 @@ def _leaderboard_run(args: argparse.Namespace) -> int:
     board = _upsert_board(board, entry, config)
     Path(_m.BOARD_FILE).write_text(json.dumps(board, indent=2) + "\n")
     print(f"\nRecorded: {entry['name']} {score}/{len(results)} → {_m.BOARD_FILE}")
+    results_path = getattr(args, "results", None)
+    if results_path:
+        from .bench import write_results
+
+        write_results(results_path, results, args, prov)
     return 0
 
 

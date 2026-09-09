@@ -154,9 +154,29 @@ coding-harness construction (`coding_session`), so the `loop.run_agent_loop`
 path enforces the same ACL as the MCP server. Verified: 36 loop/permissions +
 441 fast tests, ruff clean.
 
-**Next (by value):** Step **D** (surfaces call a stable core API, not engine
-internals — mostly done via the `loop.py` facade). Step **E/F** (ports &
-adapters, robustness) after that.
+**Step D — DONE (mostly) / E / F / G — DONE.** The remaining proposed steps are
+implemented in code; the roadmap below this section is now a historical record.
+
+- **D — stable core API (mostly done).** `loop.py` is the facade every surface
+  routes through (`prove` / `prove_best_of`). A few modules still import engine
+  *constants/helpers* (`LEAN_DIR`, `_resolve_lean_dir`, `SYSTEM_FULL`,
+  `_extract_body`, `_split_signature` from `prover_loop`) — these are metadata
+  and helpers, not engine calls, so they are accepted as-is; folding them behind
+  the facade is optional churn, not required.
+- **E — ports & adapters (done).** `agent/ports.py` defines the
+  `LLMClient` / `LeanRunner` / `LSPClient` / `Retriever` protocols plus
+  `Default*` adapters that delegate to the real modules. `prove()` takes
+  `llm_client` / `lean_runner` / `lsp_factory` / `retriever` as injectable
+  params, so fakes can drive the whole loop in tests without an endpoint/LSP.
+- **F — robustness (done).** `provider_retry.py` (exponential backoff + full
+  jitter, transient-error classification), `CancellationToken` for per-attempt
+  cancellation, append-only JSONL session storage (`session/storage.py`), and
+  a single `events.py` emit path for telemetry.
+- **G — embeddability (done).** `agent/acp.py` exposes `prove` to ACP editors
+  (`initialize` / `session/*`); optional wasm embeddability remains out of scope.
+
+The architecture roadmap (steps A–H) is complete. See `docs/ROADMAP.md` for the
+cross-repo plan that follows (per-problem benchmark results → the org site).
 
 **Step B — DONE (`tui/` package).** The earlier assessment that the TUI was
 "not a clean split" was resolved by making `agent.tui` a **package** instead of

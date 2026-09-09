@@ -91,6 +91,9 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Comparator-style validation: check proofs for axiom injection + statement match")
     b.add_argument("--no-record", action="store_true",
                    help="disable JSONL session recording")
+    b.add_argument("--results", default=None,
+                   help="write a compact per-problem results JSON to this path "
+                        "(web-friendly: no trace/attempts bloat)")
     b.set_defaults(fn=_m.cmd_bench)
 
     m = sub.add_parser("mcp", help="run the MCP (Model Context Protocol) stdio server")
@@ -242,6 +245,9 @@ def _build_parser() -> argparse.ArgumentParser:
                          "defaults to 'core' only when running the core benchmark")
     lb.add_argument("--max-steps", type=int, default=proj_max_steps)
     lb.add_argument("--name", default=None, help="entry name (default: model or env)")
+    lb.add_argument("--results", default=None,
+                    help="with --run, also write a compact per-problem results JSON "
+                         "(web-friendly: no trace/attempts bloat)")
     lb.add_argument("--show", action="store_true", help="only show current leaderboard")
     lb.set_defaults(fn=_m.cmd_leaderboard)
 

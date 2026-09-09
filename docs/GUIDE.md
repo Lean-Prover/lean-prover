@@ -130,6 +130,22 @@ prover bench --problems benchmark/trivial.json --report report-trivial.json
 `report.json` contains per-problem `{id, proved, steps, seconds}` plus the
 score. That score is your leaderboard entry.
 
+To also emit a compact, web-friendly per-problem results file (what the org
+site's benchmark page consumes — no `trace`/`attempts` bloat), pass
+`--results`:
+
+```bash
+prover bench --max-steps 20 --report report.json --results benchmark-results.json
+# leaderboard runs can emit it too:
+prover leaderboard --run --results benchmark-results.json
+```
+
+The file is a single JSON document
+`{schema_version, model, solver, max_steps, date, provenance, results:[...]}`
+with one entry per problem (`id`, `difficulty`, `statement`, `proved`, `steps`,
+`seconds`, `tokens`). `lean-prover-web` symlinks it in at build time (falling
+back to a seed) to render the `/benchmarks` page.
+
 ### Standard benchmarks (MiniF2F)
 
 MiniF2F statements are imported + type-checked once, then bench runs on them
