@@ -47,17 +47,10 @@ class ValidationResult:
     axioms_found: list[str]
 
 
-def _find_axiom_injections(text: str) -> list[str]:
-    hits: list[str] = []
-    if _AXIOM_RE.search(text):
-        hits.append("axiom")
-    if _SORRY_RE.search(text):
-        hits.append("sorry")
-    if _CONCAT_AXIOM_RE.search(text):
-        hits.append("concat-axiom")
-    if _ELAB_BYPASS_RE.search(text) and "axiom" in text.lower():
-        hits.append("elab-axiom")
-    return hits
+def _sanitize_decl_name(name: str) -> str:
+    """Make a Lean declaration name safe for use as a filename."""
+    safe = re.sub(r"[^A-Za-z0-9_.'-]", "_", name)[:64].strip("._-") or "decl"
+    return safe
 
 
 def audit_axioms(lean_file: Path, lean_dir: Path, name: str, timeout: int = 60) -> tuple[bool, list[str], str]:
@@ -70,7 +63,7 @@ def audit_axioms(lean_file: Path, lean_dir: Path, name: str, timeout: int = 60) 
     text = lean_file.read_text(errors="replace")
     tmp_dir = lean_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    probe = tmp_dir / f"Audit_{name}.lean"
+    probe = tmp_dir / f"Audit_{_sanitize_decl_name(name)}.lean"
     probe.write_text(text + f"\n\n#print axioms {name}\n")
     try:
         proved, output = lean.check_file(probe, lean_dir, timeout=timeout)

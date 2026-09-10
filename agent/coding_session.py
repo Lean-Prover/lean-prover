@@ -7,7 +7,7 @@
     build system prompt -> AgentHarness(...)
 
 Lean adappts: durable prove-loop sessions stay in the flat JSONL stream
-(``agent/session.py``); this class powers the generic Tau-style agent path
+(``agent/session/``); this class powers the generic Tau-style agent path
 and the ``loop.run_agent_loop`` harness used by ``AgentHarness``.
 
 ``prove()`` is NOT replaced — the legacy repair loop stays authoritative for

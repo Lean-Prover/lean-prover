@@ -18,8 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import lean, llm
+from .prover_loop import HEADER
 
-HEADER = "import Mathlib\n\nopen BigOperators Nat Finset\n\n"
 SORRY = " := by\n  sorry"
 
 SYSTEM = """You are an expert at formalizing mathematics into Lean 4 / Mathlib.

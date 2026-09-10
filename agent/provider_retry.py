@@ -28,7 +28,7 @@ def is_transient_error(message: str) -> bool:
     deterministic failure.
     """
     msg = message.lower()
-    if any(code in message for code in _TRANSIENT_STATUS):
+    if any(code in msg for code in _TRANSIENT_STATUS):
         return True
     return any(marker in msg for marker in _TRANSIENT_MARKERS)
 

@@ -76,8 +76,8 @@ prover prove "theorem sq_nonneg (x : ℤ) : 0 ≤ x ^ 2 := by sorry"
 ```
 
 What happens:
-1. The statement is written to `lean/src/Prover.lean` (with `import Mathlib` prepended)
-2. `lake build` runs → fails on `sorry`
+1. The statement is written to `lean/src/Prover.lean` (with `import Mathlib` + `import ProverSupport` prepended)
+2. `lake env lean --check` runs → fails on `sorry`
 3. Diagnostics are parsed (file:line:col + surrounding source)
 4. The LLM gets the errors and returns a corrected file
 5. Repeat until `lake build` succeeds → **PROVED ∎**
@@ -185,7 +185,7 @@ core loop.
 ## 5. How the loop works (and why it works)
 
 ```
-statement ──► LLM drafts proof ──► lake build ──► type-checks? ──► PROVED ∎
+statement ──► LLM drafts proof ──► lake env lean --check ──► type-checks? ──► PROVED ∎
                     ▲                                │ no
                     └── parsed diagnostics ◄─────────┘
                         (error + source context)
@@ -199,9 +199,9 @@ convergent repair loop. On top of that, the agent also feeds the model the
 RPC), so the model sees actual hypotheses + targets, not just error text.
 
 Files:
-- `agent/loop.py` — the loop, hammer pre-pass, resume/branch, result tracking
+- `agent/prover_loop.py` — the proof engine (hammer pre-pass, LLM repair, resume/branch); `agent/loop.py` is the generic provider loop + thin `prove` re-export facade
 - `agent/events.py` — event protocol: one record stream fans out to trace/session/TUI
-- `agent/session.py` — durable JSONL sessions (`~/.prover/sessions/`, `prover sessions`)
+- `agent/session/` — durable JSONL sessions (`~/.prover/sessions/`, `prover sessions`)
 - `agent/session_manager.py` — session index (`index.jsonl`), resume history rebuild
 - `agent/compaction.py` — folds old attempts into a failed-attempts summary
 - `agent/lean.py` — `lake build` / `lake env lean` + diagnostic regex + source-context
@@ -318,7 +318,7 @@ TUI, `/local` opens a screen with the same status/configure/doctor/use actions.
 |---|---|
 | `lake: command not found` | `source ~/.bashrc` after elan install |
 | Build takes forever | You skipped `lake exe cache get` |
-| `unknown identifier 'Even'` etc. | Mathlib import missing — check `HEADER` in `agent/loop.py` |
+| `unknown identifier 'Even'` etc. | Mathlib import missing — check `HEADER` in `agent/prover_loop.py` |
 | LLM returns prose, no code block | Model too weak; or check `extract_lean_code` output |
 | API 429 / overloaded | Free tiers rate-limit; switch provider or add backoff |
 | Proof uses `sorry` and "passes" | Can't happen — `lake build` fails on `sorry` by default |
@@ -342,6 +342,11 @@ TUI, `/local` opens a screen with the same status/configure/doctor/use actions.
 - [x] Session resume + branching (index.jsonl, prove --resume from, branch_at)
 - [x] History compaction (failed-attempts summary, tau memory model)
 - [x] Live leaderboard (http://100.96.13.61:8899, self-hosted from lean-prover-web / leaderboard.json)
+
+For the full feature list (best-of-N, beam search, retrieval, routing,
+autoformalization, lemma planning, synthetic data, MiniF2F import, runTactic,
+full-file mode, adaptive budget) see README Roadmap — this guide lists the
+core loop only.
 
 
 ---

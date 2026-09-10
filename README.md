@@ -149,7 +149,7 @@ prover rl-data --problems benchmark/problems.json --n-attempts 3 --out benchmark
 # GRPO fine-tune needs a trainable/GPU policy model — see agent/finetune.py.
 
 # Tests
-pytest tests/        # 720 tests (loop, compaction, session, TUI, commands, baselines)
+pytest tests/        # 741 tests (loop, compaction, session, TUI, commands, baselines)
 ```
 
 ## How it works
@@ -228,9 +228,10 @@ lean/               Lean 4 package (lake), Mathlib pinned to v4.33.0
   src/Physics/      dimensional-analysis layer (Dimension + Quantity, type-enforced units)
   tmp/              per-problem files (benchmark isolation)
 agent/              the agent (Python)
-  loop.py           repair loop + hammer pre-pass + resume/branch
+  prover_loop.py    proof engine: hammer pre-pass + LLM repair + resume/branch
+  loop.py           generic provider loop + thin prove re-export facade
   events.py         event protocol — one stream to trace/session/TUI
-  session.py        JSONL sessions (~/.prover/sessions/)
+  session/          JSONL sessions package (~/.prover/sessions/)
   session_manager.py index.jsonl upsert/list + history rebuild
   session_stats.py  per-session token + cost aggregation
   compaction.py     failed-attempts summary (tau's memory model)
@@ -238,6 +239,7 @@ agent/              the agent (Python)
   llm.py            LLM provider (OpenAI-compatible) + cost tracking
   lsp.py            Lean language server client (goal-state feedback, run_tactic RPC)
   retrieval.py      local Mathlib lemma-signature keyword index + search
+  loogle.py         online Loogle lemma search w/ local fallback (MCP path)
   router.py         per-difficulty model/temperature/step routing (env table)
   formalize.py      autoformalization (NL → compilable Lean theorem)
   plan.py           lemma-bank planning (prove helpers before the main theorem)
@@ -245,7 +247,21 @@ agent/              the agent (Python)
   mcp.py            MCP server (expose prove_theorem to any agent)
   acp.py            ACP server (session-based prove for editors)
   search.py         beam/tree search over the repair loop (progress-pruned frontier)
-  commands.py       slash-command registry (tau pattern, 22 built-ins)
+  commands.py       slash-command registry (tau pattern, 36 built-ins)
+  cli/              argparse command registry (prove/bench/leaderboard/sessions/...)
+  cli_coding.py     coding facade (prover-coding/chat/rpc/export/login/update)
+  coding_session.py generic Tau-style session substrate over AgentHarness
+  coding_tools.py   file tools (read/edit/write/bash) for the coding path
+  harness.py        stateful reusable agent harness (queue/steer)
+  rpc.py            native JSONL RPC stdio loop
+  providers/        streaming providers (openai_compatible/anthropic/fake)
+  oauth/            device-code/PKCE auth flows for providers
+  extensions/       isolated extension loader + runtime (UiBridge contract)
+  rendering/        --output text/json/transcript renderers (tau rendering port)
+  messages.py       provider-neutral message models (pydantic)
+  ports.py          LLMClient/LeanRunner/LSPClient/Retriever protocols + adapters
+  provider_retry.py transient-error classifier + exp-backoff/full-jitter
+  validate.py       axiom/sorry/#eval scan + statement check + #print axioms audit
   paths.py          canonical user/project dir config (env overrides)
   context_window.py token-based context estimation + auto-compaction threshold
   session_usage.py  /usage token + cost dashboard
@@ -260,7 +276,7 @@ agent/              the agent (Python)
   lean_baseline.py  no-LLM baseline runner (prover lean-baseline)
   synth_lean.py     Lean-proved corpus JSONL writer (prover synth-lean)
 benchmark/          fixed theorem set + runner + import_standard.py + merge_reports.py
-tests/              pytest suite (720 tests)
+tests/              pytest suite (741 tests)
 leaderboard.json    local score history (prover leaderboard; served by lean-prover-web)
 ```
 
@@ -275,7 +291,7 @@ leaderboard.json    local score history (prover leaderboard; served by lean-prov
 - [x] Leaderboard (local: `prover leaderboard`; live board at http://100.96.13.61:8899)
 - [x] TUI: custom prove, session replay, parallel workers, Errors panel
 - [x] Clipboard (tau port: pyperclip + OSC-52 fallback, selection-aware)
-- [x] Slash commands + completions (tau pattern, 21 built-ins) + ctrl+k palette
+- [x] Slash commands + completions (tau pattern, 36 built-ins) + ctrl+k palette
 - [x] Session resume + branching (`/branch <session> [turn]`, model branch summaries)
 - [x] File drops into the prompt bar (paths quoted/URI-decoded, tau port)
 - [x] Session export (`/export`, JSONL + self-contained HTML transcript)

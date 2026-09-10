@@ -9,7 +9,8 @@ Each command family lives in its own module:
 - ``misc.py``       — thin delegators (mcp/formalize/synth/finetune/tui/…)
 - ``parser.py``     — the argparse dispatcher (``cli`` / ``_build_parser``)
 - ``common.py``     — shared helpers
-- ``coding.py``-equivalent lives in ``agent.cli_coding`` (the small coding facade)
+- the small coding facade lives in ``agent/cli_coding.py``
+  (``prover-coding`` / ``chat`` / ``rpc`` / ``export`` / ``login`` / ``update``)
 
 ``agent.main`` re-exports everything here, so the installed entry point
 (``prover = agent.main:cli``) and the test suite's ``agent.main`` monkeypatch

@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import lean, llm
 from .loop import LEAN_DIR
-from .prover_loop import SYSTEM_FULL, _extract_body, _split_signature
+from .prover_loop import HEADER, SYSTEM_FULL, _extract_body, _split_signature
 
 DEFAULT_BEAM = 3
 
@@ -197,9 +197,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"beam search: {solved}/{len(results)} proved (beam={args.beam})")
     print(f"report: {args.out}")
     return 0
-
-
-HEADER = "import Mathlib\n\nopen BigOperators Nat Finset\n\n"
 
 
 if __name__ == "__main__":
