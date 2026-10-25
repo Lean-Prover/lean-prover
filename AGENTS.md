@@ -54,3 +54,7 @@ Per-tool exact allow/deny rules live in `agent/permissions.py`
 (`/permissions remember allow|deny <tool> [pattern]`, `revoke <id>`,
 `mode <ask|auto|yolo>`, `list`). This is orthogonal to the existing per-project
 trust in `agent/project_trust.py`.
+
+## Cloudflare
+
+This repo has no Cloudflare deployment. If one is added it must follow the Vaultly-only policy (vault `cf-leanprover`) used by lean-prover-web.
